@@ -29,7 +29,7 @@ jobs:
       run: |
         sed -i 's/\r$//' gradlew || true
         chmod +x gradlew || true
-        ./gradlew assembleDebug --no-daemon
+        ./gradlew assembleDebug --no-daemon --stacktrace
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
