@@ -22,11 +22,11 @@ jobs:
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Grant Execute Permission for Gradlew
-      run: chmod +x gradlew
-
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: Fix Line Endings & Build Debug APK
+      run: |
+        sed -i 's/\r$//' gradlew || true
+        chmod +x gradlew || true
+        ./gradlew assembleDebug || gradle assembleDebug
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
