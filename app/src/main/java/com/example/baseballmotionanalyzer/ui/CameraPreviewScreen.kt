@@ -23,7 +23,7 @@ import java.util.concurrent.Executors
 import kotlin.math.abs
 
 /**
- * 相機預覽與 60FPS 姿態分析主畫面 (圖層對齊與極致流暢防護版)
+ * 相機預覽與 60FPS 姿態分析主畫面 (修復匯入檔與極致流暢版)
  */
 @Composable
 fun CameraPreviewScreen(
@@ -32,7 +32,7 @@ fun CameraPreviewScreen(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    // UI 狀態管理
+    // UI 狀態管理 (明確匯入 getValue / setValue 屬性委派)
     var playerHeightCm by remember { mutableFloatStateOf(175f) }
     var currentPoseResult by remember { mutableStateOf<PoseLandmarkerResult?>(null) }
     var ballTrajectory by remember { mutableStateOf<List<Offset>>(emptyList()) }
@@ -53,7 +53,6 @@ fun CameraPreviewScreen(
                     currentPoseResult = result
 
                     result.landmarks().firstOrNull()?.let { landmarks ->
-                        // 1. 自動根據打者頭頂 (0) 與腳踝 (27,28) 計算像素高度
                         val noseY = landmarks[0].y()
                         val ankleY = (landmarks[27].y() + landmarks[28].y()) / 2f
                         val personPixelHeight = abs(ankleY - noseY) * 720f
@@ -63,7 +62,6 @@ fun CameraPreviewScreen(
                             personPixelHeight = personPixelHeight
                         )
 
-                        // 2. 追蹤手腕 (15) 揮棒加速度與物理位移
                         val wristIndex = 15
                         if (landmarks.size > wristIndex) {
                             val wristLandmark = landmarks[wristIndex]
@@ -95,9 +93,7 @@ fun CameraPreviewScreen(
         }
     }
 
-    // Jetpack Compose Box 三層圖層堆疊架構
     Box(modifier = modifier.fillMaxSize()) {
-        // 【底層 Layer 0】: CameraX 視訊畫面 (PreviewView)
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx).apply {
@@ -139,7 +135,6 @@ fun CameraPreviewScreen(
                         } catch (e: Exception) {
                             e.printStackTrace()
                         } finally {
-                            // 關鍵防護：finally 確保 imageProxy 無論如何都會釋放，徹底防止 60FPS 畫面凍結卡頓
                             imageProxy.close()
                         }
                     }
@@ -162,13 +157,11 @@ fun CameraPreviewScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // 【中層 Layer 1】: 骨架與軌跡畫布 (與底層畫面 100% 座標精確對齊)
         BaseballOverlayCanvas(
             poseResult = currentPoseResult,
             trajectoryPoints = ballTrajectory
         )
 
-        // 【頂層 Layer 2】: 抬頭顯示與身高設定面板 (置頂不被遮擋)
         MetricsHUD(
             metrics = metrics,
             playerHeightCm = playerHeightCm,

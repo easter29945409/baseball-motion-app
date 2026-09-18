@@ -5,7 +5,11 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,8 +20,7 @@ import androidx.compose.ui.unit.sp
 import com.example.baseballmotionanalyzer.analytics.BaseballPhysicsEngine
 
 /**
- * 高效簡潔版 棒球抬頭顯示面板 (HUD)
- * 無重度特效與模糊運算，低 CPU/GPU 開銷，清晰呈現場上物理數據。
+ * 高效簡潔版 棒球抬頭顯示面板 (HUD) (修復匯入檔)
  */
 @Composable
 fun MetricsHUD(
@@ -34,7 +37,6 @@ fun MetricsHUD(
             .fillMaxSize()
             .padding(12.dp)
     ) {
-        // 頂部列：身高標定與 FPS 狀態
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -42,7 +44,6 @@ fun MetricsHUD(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // 身高標定按鈕
             Button(
                 onClick = { showHeightDialog = true },
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E293B)),
@@ -57,7 +58,6 @@ fun MetricsHUD(
                 )
             }
 
-            // 60FPS 狀態標示
             Surface(
                 color = Color(0xFF0F172A),
                 shape = RoundedCornerShape(6.dp)
@@ -72,7 +72,6 @@ fun MetricsHUD(
             }
         }
 
-        // 底部數據卡片列 (Minimal Metric Panel)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -104,7 +103,6 @@ fun MetricsHUD(
             )
         }
 
-        // 身高輸入彈窗
         if (showHeightDialog) {
             HeightInputDialog(
                 currentHeight = playerHeightCm,
