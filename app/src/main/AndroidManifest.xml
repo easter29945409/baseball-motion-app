@@ -9,11 +9,7 @@
 
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
-        android:icon="@mipmap/ic_launcher"
-        android:label="棒球 AI 擊球投球分析"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:label="棒球 AI 姿態分析"
         android:supportsRtl="true"
         android:theme="@style/Theme.BaseballMotionAnalyzer"
         tools:targetApi="31">
