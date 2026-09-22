@@ -32,6 +32,7 @@ class PoseLandmarkerHelper(
     private fun setupPoseLandmarker() {
         try {
             val baseOptionsBuilder = BaseOptions.builder()
+                .setModelAssetPath("pose_landmarker_lite.task")
                 .setDelegate(Delegate.GPU)
 
             val optionsBuilder = PoseLandmarker.PoseLandmarkerOptions.builder()
@@ -52,6 +53,7 @@ class PoseLandmarkerHelper(
         } catch (e: Exception) {
             try {
                 val fallbackBaseOptions = BaseOptions.builder()
+                    .setModelAssetPath("pose_landmarker_lite.task")
                     .setDelegate(Delegate.CPU)
                     .build()
                 val fallbackOptions = PoseLandmarker.PoseLandmarkerOptions.builder()

@@ -3,6 +3,7 @@ package com.example.baseballmotionanalyzer.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Path
 import android.util.AttributeSet
@@ -11,8 +12,7 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarker
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 
 /**
- * 棒球姿態與軌跡繪製 View (超高效標準 Android Custom View)
- * 零記憶體浪費，極致順暢，無任何 Kotlin Compose 相容性依賴問題。
+ * 棒球姿態與軌跡繪製 View (包含本壘板與打擊區輔助引導框)
  */
 class BaseballOverlayView @JvmOverloads constructor(
     context: Context,
@@ -23,6 +23,20 @@ class BaseballOverlayView @JvmOverloads constructor(
     private var poseResult: PoseLandmarkerResult? = null
     private var trajectoryPoints: List<Pair<Float, Float>> = emptyList()
 
+    private val guidancePaint = Paint().apply {
+        color = Color.parseColor("#FFEA00") // 黃色虛線引導框
+        strokeWidth = 3f
+        style = Paint.Style.STROKE
+        pathEffect = DashPathEffect(floatArrayOf(15f, 15f), 0f)
+        isAntiAlias = true
+    }
+
+    private val guidanceTextPaint = Paint().apply {
+        color = Color.parseColor("#FFEA00")
+        textSize = 28f
+        isAntiAlias = true
+    }
+
     private val skeletonPaint = Paint().apply {
         color = Color.parseColor("#00E5FF") // 亮青色
         strokeWidth = 4f
@@ -31,7 +45,7 @@ class BaseballOverlayView @JvmOverloads constructor(
     }
 
     private val keyJointPaint = Paint().apply {
-        color = Color.parseColor("#FFEA00") // 亮黃色
+        color = Color.parseColor("#FFEA00") // 亮黃關節
         style = Paint.Style.FILL
         isAntiAlias = true
     }
@@ -62,6 +76,21 @@ class BaseballOverlayView @JvmOverloads constructor(
         val canvasWidth = width.toFloat()
         val canvasHeight = height.toFloat()
 
+        // 0. 繪製「本壘板與打擊區引導虛線框」 (Guidance Frame Overlay)
+        val frameLeft = canvasWidth * 0.25f
+        val frameTop = canvasHeight * 0.15f
+        val frameRight = canvasWidth * 0.75f
+        val frameBottom = canvasHeight * 0.85f
+
+        // 繪製打擊者區域引導外框
+        canvas.drawRect(frameLeft, frameTop, frameRight, frameBottom, guidancePaint)
+        canvas.drawText("🎯 請將打者對齊此虛線區域 (Batter Area)", frameLeft + 10f, frameTop + 35f, guidanceTextPaint)
+
+        // 繪製底部分邊本壘板對齊線
+        val homePlateY = canvasHeight * 0.82f
+        canvas.drawLine(canvasWidth * 0.45f, homePlateY, canvasWidth * 0.55f, homePlateY, guidancePaint)
+        canvas.drawText("本壘板 (Home Plate)", canvasWidth * 0.42f, homePlateY + 30f, guidanceTextPaint)
+
         // 1. 繪製殘影動態軌跡
         if (trajectoryPoints.size > 1) {
             trajectoryPath.reset()
@@ -76,7 +105,6 @@ class BaseballOverlayView @JvmOverloads constructor(
         poseResult?.landmarks()?.firstOrNull()?.let { landmarkList ->
             val connections = PoseLandmarker.POSE_LANDMARKS
 
-            // 骨架連線
             connections.forEach { connection ->
                 val startLm = landmarkList[connection.start()]
                 val endLm = landmarkList[connection.end()]
@@ -89,7 +117,6 @@ class BaseballOverlayView @JvmOverloads constructor(
                 canvas.drawLine(startX, startY, endX, endY, skeletonPaint)
             }
 
-            // 四肢端點標示 (15, 16, 13, 14, 27, 28, 25, 26)
             val keyJointIndices = listOf(15, 16, 13, 14, 27, 28, 25, 26)
 
             landmarkList.forEachIndexed { index, landmark ->
