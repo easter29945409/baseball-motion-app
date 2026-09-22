@@ -16,6 +16,8 @@ import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
  */
 class PoseLandmarkerHelper(
     private val context: Context,
+    private val minDetectionConfidence: Float = 0.65f,
+    private val minTrackingConfidence: Float = 0.50f,
     private val poseLandmarkerListener: LandmarkerListener? = null
 ) {
     private var poseLandmarker: PoseLandmarker? = null
@@ -37,8 +39,8 @@ class PoseLandmarkerHelper(
 
             val optionsBuilder = PoseLandmarker.PoseLandmarkerOptions.builder()
                 .setBaseOptions(baseOptionsBuilder.build())
-                .setMinPoseDetectionConfidence(0.5f)
-                .setMinTrackingConfidence(0.5f)
+                .setMinPoseDetectionConfidence(minDetectionConfidence)
+                .setMinTrackingConfidence(minTrackingConfidence)
                 .setMinPosePresenceConfidence(0.5f)
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setResultListener { result, image ->

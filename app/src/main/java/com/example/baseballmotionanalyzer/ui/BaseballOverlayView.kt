@@ -71,25 +71,52 @@ class BaseballOverlayView @JvmOverloads constructor(
         postInvalidateOnAnimation()
     }
 
+    private val homePlatePath = Path()
+    private var isRightHanded: Boolean = true
+
+    fun setResults(
+        result: PoseLandmarkerResult?,
+        points: List<Pair<Float, Float>>,
+        isRightHanded: Boolean = true
+    ) {
+        this.poseResult = result
+        this.trajectoryPoints = points
+        this.isRightHanded = isRightHanded
+        postInvalidateOnAnimation()
+    }
+
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val canvasWidth = width.toFloat()
         val canvasHeight = height.toFloat()
 
-        // 0. 繪製「本壘板與打擊區引導虛線框」 (Guidance Frame Overlay)
-        val frameLeft = canvasWidth * 0.25f
+        // 0. 繪製「打擊區引導虛線框」 (Batter Box Overlay)
+        val frameLeft = if (isRightHanded) canvasWidth * 0.20f else canvasWidth * 0.50f
         val frameTop = canvasHeight * 0.15f
-        val frameRight = canvasWidth * 0.75f
+        val frameRight = if (isRightHanded) canvasWidth * 0.50f else canvasWidth * 0.80f
         val frameBottom = canvasHeight * 0.85f
 
-        // 繪製打擊者區域引導外框
         canvas.drawRect(frameLeft, frameTop, frameRight, frameBottom, guidancePaint)
-        canvas.drawText("🎯 請將打者對齊此虛線區域 (Batter Area)", frameLeft + 10f, frameTop + 35f, guidanceTextPaint)
+        val stanceText = if (isRightHanded) "🎯 打者區域 (右打 RHH)" else "🎯 打者區域 (左打 LHH)"
+        canvas.drawText(stanceText, frameLeft + 10f, frameTop + 35f, guidanceTextPaint)
 
-        // 繪製底部分邊本壘板對齊線
-        val homePlateY = canvasHeight * 0.82f
-        canvas.drawLine(canvasWidth * 0.45f, homePlateY, canvasWidth * 0.55f, homePlateY, guidancePaint)
-        canvas.drawText("本壘板 (Home Plate)", canvasWidth * 0.42f, homePlateY + 30f, guidanceTextPaint)
+        // 繪製標準五邊形「本壘板 (Home Plate)」對齊框 (前平邊朝投手/上、後尖端朝捕手/下)
+        val plateCenterX = canvasWidth * 0.50f
+        val plateTopY = canvasHeight * 0.76f
+        val plateWidth = canvasWidth * 0.12f   // 代表 43.2cm 本壘板
+        val plateSideLen = canvasHeight * 0.04f // 21.6cm 側邊
+        val plateApexY = plateTopY + canvasHeight * 0.08f // 尖端指向捕手/主審
+
+        homePlatePath.reset()
+        homePlatePath.moveTo(plateCenterX - plateWidth / 2f, plateTopY) // 左上 (平邊)
+        homePlatePath.lineTo(plateCenterX + plateWidth / 2f, plateTopY) // 右上 (平邊朝投手)
+        homePlatePath.lineTo(plateCenterX + plateWidth / 2f, plateTopY + plateSideLen) // 右側邊
+        homePlatePath.lineTo(plateCenterX, plateApexY) // 後尖端 (指向捕手/主審 🔻)
+        homePlatePath.lineTo(plateCenterX - plateWidth / 2f, plateTopY + plateSideLen) // 左側邊
+        homePlatePath.close()
+
+        canvas.drawPath(homePlatePath, guidancePaint)
+        canvas.drawText("本壘板 (Home Plate 🔻)", plateCenterX - 90f, plateTopY - 10f, guidanceTextPaint)
 
         // 1. 繪製殘影動態軌跡
         if (trajectoryPoints.size > 1) {
@@ -101,7 +128,7 @@ class BaseballOverlayView @JvmOverloads constructor(
             canvas.drawPath(trajectoryPath, trajectoryPaint)
         }
 
-        // 2. 繪製 MediaPipe 33 點姿態與四肢端點
+        // 2. 繪製 MediaPipe 33 點姿態與四肢端點 (包含可見度/置信度過濾，徹底防止背景鬼影)
         poseResult?.landmarks()?.firstOrNull()?.let { landmarkList ->
             val connections = PoseLandmarker.POSE_LANDMARKS
 
@@ -109,25 +136,33 @@ class BaseballOverlayView @JvmOverloads constructor(
                 val startLm = landmarkList[connection.start()]
                 val endLm = landmarkList[connection.end()]
 
-                val startX = startLm.x() * canvasWidth
-                val startY = startLm.y() * canvasHeight
-                val endX = endLm.x() * canvasWidth
-                val endY = endLm.y() * canvasHeight
+                val startVisible = startLm.visibility().orElse(1.0f) > 0.5f && startLm.presence().orElse(1.0f) > 0.5f
+                val endVisible = endLm.visibility().orElse(1.0f) > 0.5f && endLm.presence().orElse(1.0f) > 0.5f
 
-                canvas.drawLine(startX, startY, endX, endY, skeletonPaint)
+                if (startVisible && endVisible) {
+                    val startX = startLm.x() * canvasWidth
+                    val startY = startLm.y() * canvasHeight
+                    val endX = endLm.x() * canvasWidth
+                    val endY = endLm.y() * canvasHeight
+
+                    canvas.drawLine(startX, startY, endX, endY, skeletonPaint)
+                }
             }
 
             val keyJointIndices = listOf(15, 16, 13, 14, 27, 28, 25, 26)
 
             landmarkList.forEachIndexed { index, landmark ->
-                val cx = landmark.x() * canvasWidth
-                val cy = landmark.y() * canvasHeight
-                val isKey = index in keyJointIndices
+                val isVisible = landmark.visibility().orElse(1.0f) > 0.5f && landmark.presence().orElse(1.0f) > 0.5f
+                if (isVisible) {
+                    val cx = landmark.x() * canvasWidth
+                    val cy = landmark.y() * canvasHeight
+                    val isKey = index in keyJointIndices
 
-                if (isKey) {
-                    canvas.drawCircle(cx, cy, 10f, keyJointPaint)
-                } else {
-                    canvas.drawCircle(cx, cy, 5f, jointPaint)
+                    if (isKey) {
+                        canvas.drawCircle(cx, cy, 10f, keyJointPaint)
+                    } else {
+                        canvas.drawCircle(cx, cy, 5f, jointPaint)
+                    }
                 }
             }
         }

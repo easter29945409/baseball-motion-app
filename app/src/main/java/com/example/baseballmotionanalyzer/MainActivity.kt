@@ -1,16 +1,17 @@
 package com.example.baseballmotionanalyzer
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.os.Bundle
+import android.util.Log
 import android.util.Size
 import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
-import android.widget.Toast
+import android.widget.*
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
@@ -25,9 +26,6 @@ import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
 import java.util.concurrent.Executors
 import kotlin.math.abs
-
-import android.util.Log
-import android.widget.LinearLayout
 
 data class SwingRecord(
     val id: Int,
@@ -44,6 +42,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var overlayView: BaseballOverlayView
     private lateinit var btnTabCamera: Button
     private lateinit var btnTabHistory: Button
+    private lateinit var btnBackToCamera: Button
     private lateinit var btnHeight: Button
     private lateinit var btnBatterSide: Button
     private lateinit var btnSettings: Button
@@ -57,12 +56,18 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraContainer: View
     private lateinit var historyContainer: View
 
+    // 偏好設定與運動學變數
     private var playerHeightCm: Float = 175f
+    private var cameraDistanceMeters: Float = 4.0f
+    private var homePlateWidthCm: Float = 43.2f
     private var triggerSpeedKmh: Float = 50f
     private var cooldownSec: Float = 1.5f
-    private var homePlateWidthCm: Float = 43.2f
+    private var speedMultiplier: Float = 1.00f
+    private var minDetectionConfidence: Float = 0.65f
+    private var minTrackingConfidence: Float = 0.50f
 
     private var isRightHanded: Boolean = true
+    private var selectedLensFacing: Int = CameraSelector.LENS_FACING_BACK
     private var cameraProvider: ProcessCameraProvider? = null
     private var poseLandmarkerHelper: PoseLandmarkerHelper? = null
 
@@ -71,6 +76,14 @@ class MainActivity : AppCompatActivity() {
     private var swingCount = 0
     private var lastSwingTimeMs: Long = 0L
 
+    // 揮棒峰值定格鎖定 (Post-Swing Peak Latching)
+    private var isSwingingStroke: Boolean = false
+    private var peakSpeedKmh: Float = 0f
+    private var peakLaunchAngle: Float = 0f
+    private var peakDistance: Float = 0f
+    private var peakAngularVelocity: Float = 0f
+
+    // 軀幹轉體角速度前幀座標
     private var prevLsX: Float = 0f
     private var prevLsY: Float = 0f
     private var prevRsX: Float = 0f
@@ -90,6 +103,7 @@ class MainActivity : AppCompatActivity() {
         overlayView = findViewById(R.id.overlayView)
         btnTabCamera = findViewById(R.id.btnTabCamera)
         btnTabHistory = findViewById(R.id.btnTabHistory)
+        btnBackToCamera = findViewById(R.id.btnBackToCamera)
         btnHeight = findViewById(R.id.btnHeight)
         btnBatterSide = findViewById(R.id.btnBatterSide)
         btnSettings = findViewById(R.id.btnSettings)
@@ -109,6 +123,7 @@ class MainActivity : AppCompatActivity() {
 
         btnTabCamera.setOnClickListener { switchToCameraTab() }
         btnTabHistory.setOnClickListener { switchToHistoryTab() }
+        btnBackToCamera.setOnClickListener { switchToCameraTab() }
 
         if (checkCameraPermission()) {
             startCameraAndAnalysis()
@@ -139,7 +154,7 @@ class MainActivity : AppCompatActivity() {
         btnTabCamera.setBackgroundColor(0xFF00E5FF.toInt())
         btnTabCamera.setTextColor(0xFF000000.toInt())
 
-        btnTabHistory.setBackgroundColor(0xFF1E293B.toInt())
+        btnTabHistory.setBackgroundColor(0x801E293B.toInt())
         btnTabHistory.setTextColor(0xFFFFFFFF.toInt())
 
         if (checkCameraPermission()) {
@@ -157,7 +172,7 @@ class MainActivity : AppCompatActivity() {
         btnTabHistory.setBackgroundColor(0xFF00E5FF.toInt())
         btnTabHistory.setTextColor(0xFF000000.toInt())
 
-        btnTabCamera.setBackgroundColor(0xFF1E293B.toInt())
+        btnTabCamera.setBackgroundColor(0x801E293B.toInt())
         btnTabCamera.setTextColor(0xFFFFFFFF.toInt())
 
         updateHistoryStats()
@@ -175,13 +190,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startCameraAndAnalysis() {
+        poseLandmarkerHelper?.clear()
         poseLandmarkerHelper = PoseLandmarkerHelper(
             context = this,
+            minDetectionConfidence = minDetectionConfidence,
+            minTrackingConfidence = minTrackingConfidence,
             poseLandmarkerListener = object : PoseLandmarkerHelper.LandmarkerListener {
                 override fun onError(error: String) {
                     Log.e(TAG, "MediaPipe Error: $error")
                     runOnUiThread {
-                        Toast.makeText(this@MainActivity, "MediaPipe AI: $error", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@MainActivity, "AI Notice: $error", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -191,6 +209,10 @@ class MainActivity : AppCompatActivity() {
                     timestampMs: Long
                 ) {
                     runOnUiThread {
+                        val now = System.currentTimeMillis()
+                        val cooldownMs = (cooldownSec * 1000).toLong()
+                        val isInCooldown = (now - lastSwingTimeMs < cooldownMs)
+
                         result.landmarks().firstOrNull()?.let { landmarks ->
                             val noseY = landmarks[0].y()
                             val ankleY = (landmarks[27].y() + landmarks[28].y()) / 2f
@@ -198,7 +220,9 @@ class MainActivity : AppCompatActivity() {
 
                             val scale = BaseballPhysicsEngine.calculateScaleFromPlayerHeight(
                                 playerHeightCm = playerHeightCm,
-                                personPixelHeight = personPixelHeight
+                                personPixelHeight = personPixelHeight,
+                                cameraDistanceMeters = cameraDistanceMeters,
+                                speedMultiplier = speedMultiplier
                             )
 
                             // 計算雙肩軀幹角速度 (Landmark 11: Left Shoulder, Landmark 12: Right Shoulder)
@@ -223,7 +247,7 @@ class MainActivity : AppCompatActivity() {
                                 hasPrevShoulders = true
                             }
 
-                            // 根據手動選擇的打席鎖定主導手腕 (右打: 15 / 左打: 16)
+                            // 根據打席鎖定主導手腕 (右打: 15 / 左打: 16)
                             val wristIndex = if (isRightHanded) 15 else 16
                             if (landmarks.size > wristIndex) {
                                 val wrist = landmarks[wristIndex]
@@ -242,27 +266,42 @@ class MainActivity : AppCompatActivity() {
                                     fps = 60f
                                 )
 
-                                tvSpeed.text = String.format("%.1f km/h", metrics.speedKmh)
-                                tvAngle.text = String.format("%.1f°", metrics.launchAngleDeg)
-                                tvAngularVelocity.text = String.format("%.0f deg/s", metrics.angularVelocityDegSec)
-                                tvDistance.text = String.format("%.1f m", metrics.estimatedDistanceMeters)
-
-                                // 記錄超高速度觸發點 + 方向性過濾 + 自訂冷卻時間
-                                val now = System.currentTimeMillis()
-                                val cooldownMs = (cooldownSec * 1000).toLong()
-                                if (metrics.speedKmh >= triggerSpeedKmh && metrics.isCorrectDirection && (now - lastSwingTimeMs > cooldownMs)) {
-                                    lastSwingTimeMs = now
-                                    swingCount++
-                                    swingHistoryList.add(
-                                        SwingRecord(
-                                            id = swingCount,
-                                            speedKmh = metrics.speedKmh,
-                                            launchAngleDeg = metrics.launchAngleDeg,
-                                            distanceMeters = metrics.estimatedDistanceMeters,
-                                            angularVelocityDegSec = metrics.angularVelocityDegSec,
-                                            timestamp = "揮棒 #${swingCount}"
+                                // 揮棒後定格呈現邏輯 (Post-Swing Peak Latching Mode)
+                                if (!isInCooldown) {
+                                    if (metrics.speedKmh >= triggerSpeedKmh && metrics.isCorrectDirection) {
+                                        isSwingingStroke = true
+                                        if (metrics.speedKmh > peakSpeedKmh) {
+                                            peakSpeedKmh = metrics.speedKmh
+                                            peakLaunchAngle = metrics.launchAngleDeg
+                                            peakDistance = metrics.estimatedDistanceMeters
+                                            peakAngularVelocity = metrics.angularVelocityDegSec
+                                        }
+                                    } else if (isSwingingStroke) {
+                                        // 揮棒動作剛剛結束 $\rightarrow$ 寫入歷史並啟動定格冷卻
+                                        isSwingingStroke = false
+                                        lastSwingTimeMs = now
+                                        swingCount++
+                                        swingHistoryList.add(
+                                            SwingRecord(
+                                                id = swingCount,
+                                                speedKmh = peakSpeedKmh,
+                                                launchAngleDeg = peakLaunchAngle,
+                                                distanceMeters = peakDistance,
+                                                angularVelocityDegSec = peakAngularVelocity,
+                                                timestamp = "揮棒 #${swingCount}"
+                                            )
                                         )
-                                    )
+
+                                        tvSpeed.text = String.format("%.1f km/h", peakSpeedKmh)
+                                        tvAngle.text = String.format("%.1f°", peakLaunchAngle)
+                                        tvAngularVelocity.text = String.format("%.0f deg/s", peakAngularVelocity)
+                                        tvDistance.text = String.format("%.1f m", peakDistance)
+
+                                        peakSpeedKmh = 0f
+                                        peakLaunchAngle = 0f
+                                        peakDistance = 0f
+                                        peakAngularVelocity = 0f
+                                    }
                                 }
 
                                 if (ballTrajectory.size >= 15) ballTrajectory.removeAt(0)
@@ -270,7 +309,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        overlayView.setResults(result, ballTrajectory)
+                        overlayView.setResults(result, ballTrajectory, isRightHanded)
                     }
                 }
             }
@@ -317,9 +356,13 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 cameraProvider?.unbindAll()
+                val cameraSelector = CameraSelector.Builder()
+                    .requireLensFacing(selectedLensFacing)
+                    .build()
+
                 cameraProvider?.bindToLifecycle(
                     this,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
+                    cameraSelector,
                     preview,
                     imageAnalysis
                 )
@@ -327,6 +370,25 @@ class MainActivity : AppCompatActivity() {
                 e.printStackTrace()
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun getCameraHardwareSpecs(lensFacing: Int): String {
+        return try {
+            val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
+            for (id in cameraManager.cameraIdList) {
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
+                if (facing == lensFacing) {
+                    val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                    val fpsString = fpsRanges?.joinToString { "[${it.lower}, ${it.upper}]" } ?: "30, 60"
+                    val lensName = if (lensFacing == CameraSelector.LENS_FACING_BACK) "S24 後置主鏡頭" else "S24 前置自拍鏡頭"
+                    return "• 鏡頭: $lensName\n• 支援 FPS: $fpsString\n• 目前模式: 1280x720 @ 60 FPS"
+                }
+            }
+            "• 鏡頭規格: 支援 60 FPS 高速拍攝"
+        } catch (e: Exception) {
+            "• 鏡頭規格: 支援 60 FPS 高速拍攝"
+        }
     }
 
     private fun updateHistoryStats() {
@@ -363,51 +425,130 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showSettingsDialog() {
+        val scrollView = ScrollView(this)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(50, 30, 50, 10)
+            setPadding(40, 20, 40, 20)
         }
 
-        val etCooldown = EditText(this).apply {
-            hint = "防重複冷卻時間 (秒) [預設: 1.5]"
-            setText(cooldownSec.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        val hwSpecs = getCameraHardwareSpecs(selectedLensFacing)
+        val tvInfo = TextView(this).apply {
+            text = "ℹ️ 當前相機硬體規格 (Camera2 Specs):\n$hwSpecs"
+            setTextColor(0xFF00E5FF.toInt())
+            textSize = 12sp
+            setPadding(0, 0, 0, 20)
+        }
+        layout.addView(tvInfo)
+
+        fun createLabeledField(titleText: String, defaultVal: String, inputTypeEnum: Int): EditText {
+            val tvLabel = TextView(this).apply {
+                text = titleText
+                setTextColor(0xFFFFFFFF.toInt())
+                textSize = 13sp
+                setPadding(0, 10, 0, 4)
+            }
+            val etInput = EditText(this).apply {
+                setText(defaultVal)
+                inputType = inputTypeEnum
+                setTextColor(0xFF00E5FF.toInt())
+            }
+            layout.addView(tvLabel)
+            layout.addView(etInput)
+            return etInput
         }
 
-        val etThreshold = EditText(this).apply {
-            hint = "揮棒觸發門檻 (km/h) [預設: 50]"
-            setText(triggerSpeedKmh.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        val tvLensTitle = TextView(this).apply {
+            text = "1. 📷 選擇相機鏡頭 (Camera Lens)"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 13sp
+            setPadding(0, 10, 0, 4)
         }
-
-        val etHeight = EditText(this).apply {
-            hint = "打者身高 (cm) [預設: 175]"
-            setText(playerHeightCm.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        val rgLens = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
         }
-
-        val etPlateWidth = EditText(this).apply {
-            hint = "本壘板寬度標定 (cm) [預設: 43.2]"
-            setText(homePlateWidthCm.toString())
-            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        val rbBack = RadioButton(this).apply {
+            text = "後置主鏡頭"
+            setTextColor(0xFFFFFFFF.toInt())
+            isChecked = (selectedLensFacing == CameraSelector.LENS_FACING_BACK)
         }
+        val rbFront = RadioButton(this).apply {
+            text = "前置自拍鏡頭"
+            setTextColor(0xFFFFFFFF.toInt())
+            isChecked = (selectedLensFacing == CameraSelector.LENS_FACING_FRONT)
+        }
+        rgLens.addView(rbBack)
+        rgLens.addView(rbFront)
+        layout.addView(tvLensTitle)
+        layout.addView(rgLens)
 
-        layout.addView(etCooldown)
-        layout.addView(etThreshold)
-        layout.addView(etHeight)
-        layout.addView(etPlateWidth)
+        val etCooldown = createLabeledField(
+            "2. ⏱️ 防重複揮棒冷卻時間 (秒)",
+            cooldownSec.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etThreshold = createLabeledField(
+            "3. ⚡ 揮棒觸發速度門檻 (km/h)",
+            triggerSpeedKmh.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etMinDetect = createLabeledField(
+            "4. 🤖 AI 人體偵測信賴度 (0.1 ~ 0.9)",
+            minDetectionConfidence.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etMinTrack = createLabeledField(
+            "5. 🎯 AI 關節追蹤信賴度 (0.1 ~ 0.9)",
+            minTrackingConfidence.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etCameraDistance = createLabeledField(
+            "6. 🎥 預設相機拍攝距離 (公尺)",
+            cameraDistanceMeters.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etHeight = createLabeledField(
+            "7. 📏 打者真實身高標定 (cm)",
+            playerHeightCm.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER
+        )
+
+        val etPlateWidth = createLabeledField(
+            "8. 🎯 本壘板寬度標定 (cm)",
+            homePlateWidthCm.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        val etMultiplier = createLabeledField(
+            "9. 🎛️ 速度物理修正增益係數 (Multiplier)",
+            speedMultiplier.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        )
+
+        scrollView.addView(layout)
 
         AlertDialog.Builder(this)
-            .setTitle("⚙️ 系統進階參數設定")
-            .setView(layout)
-            .setPositiveButton("儲存變更") { _, _ ->
+            .setTitle("⚙️ 系統進階參數與相機鏡頭設定")
+            .setView(scrollView)
+            .setPositiveButton("確定儲存並套用") { _, _ ->
+                selectedLensFacing = if (rbBack.isChecked) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
                 cooldownSec = etCooldown.text.toString().toFloatOrNull() ?: 1.5f
                 triggerSpeedKmh = etThreshold.text.toString().toFloatOrNull() ?: 50f
+                minDetectionConfidence = etMinDetect.text.toString().toFloatOrNull() ?: 0.65f
+                minTrackingConfidence = etMinTrack.text.toString().toFloatOrNull() ?: 0.50f
+                cameraDistanceMeters = etCameraDistance.text.toString().toFloatOrNull() ?: 4.0f
                 playerHeightCm = etHeight.text.toString().toFloatOrNull() ?: 175f
                 homePlateWidthCm = etPlateWidth.text.toString().toFloatOrNull() ?: 43.2f
+                speedMultiplier = etMultiplier.text.toString().toFloatOrNull() ?: 1.00f
 
                 btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
-                Toast.makeText(this, "設定已更新：冷卻 ${cooldownSec}s, 門檻 ${triggerSpeedKmh}km/h", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "設定已更新並重新載入鏡頭與 AI", Toast.LENGTH_SHORT).show()
+
+                startCameraAndAnalysis()
             }
             .setNegativeButton("取消", null)
             .show()

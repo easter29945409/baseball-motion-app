@@ -24,15 +24,24 @@ object BaseballPhysicsEngine {
     )
 
     /**
-     * 根據打者身高 (cm) 與畫面上打者頭頂至腳踝的像素高度，精確導出比例尺
+     * 根據打者身高 (cm)、相機拍攝距離 (預設 4.0 米) 與增益修正係數精確導出比例尺
      * @param playerHeightCm 打者真實身高 (例: 175 cm)
      * @param personPixelHeight 畫面上打者頭部至腳踝的像素距離
+     * @param cameraDistanceMeters 相機與打者的拍攝距離 (公尺)
+     * @param speedMultiplier 速度物理修正增益係數
      * @return 比例尺 (meters per pixel)
      */
-    fun calculateScaleFromPlayerHeight(playerHeightCm: Float, personPixelHeight: Float): Float {
-        if (personPixelHeight <= 10f) return 0.0015f // 預設安全比例尺
+    fun calculateScaleFromPlayerHeight(
+        playerHeightCm: Float,
+        personPixelHeight: Float,
+        cameraDistanceMeters: Float = 4.0f,
+        speedMultiplier: Float = 1.0f
+    ): Float {
+        if (personPixelHeight <= 10f) return 0.0015f * (cameraDistanceMeters / 4.0f) * speedMultiplier
         val heightMeters = playerHeightCm / 100f
-        return heightMeters / personPixelHeight
+        val baseScale = heightMeters / personPixelHeight
+        val distanceFactor = cameraDistanceMeters / 4.0f
+        return baseScale * distanceFactor * speedMultiplier
     }
 
     /**
