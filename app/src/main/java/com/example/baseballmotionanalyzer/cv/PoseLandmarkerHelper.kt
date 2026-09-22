@@ -41,7 +41,7 @@ class PoseLandmarkerHelper(
                 .setBaseOptions(baseOptionsBuilder.build())
                 .setMinPoseDetectionConfidence(minDetectionConfidence)
                 .setMinTrackingConfidence(minTrackingConfidence)
-                .setMinPosePresenceConfidence(0.5f)
+                .setMinPosePresenceConfidence(minDetectionConfidence)
                 .setRunningMode(RunningMode.LIVE_STREAM)
                 .setResultListener { result, image ->
                     val finishTimeMs = SystemClock.uptimeMillis()
@@ -60,6 +60,9 @@ class PoseLandmarkerHelper(
                     .build()
                 val fallbackOptions = PoseLandmarker.PoseLandmarkerOptions.builder()
                     .setBaseOptions(fallbackBaseOptions)
+                    .setMinPoseDetectionConfidence(minDetectionConfidence)
+                    .setMinTrackingConfidence(minTrackingConfidence)
+                    .setMinPosePresenceConfidence(minDetectionConfidence)
                     .setRunningMode(RunningMode.LIVE_STREAM)
                     .setResultListener { result, image ->
                         poseLandmarkerListener?.onResults(result, image, SystemClock.uptimeMillis())

@@ -65,6 +65,8 @@ class MainActivity : AppCompatActivity() {
     private var speedMultiplier: Float = 1.00f
     private var minDetectionConfidence: Float = 0.65f
     private var minTrackingConfidence: Float = 0.50f
+    private var flightCaptureFrames: Int = 5 // 出球 CV 追蹤捕捉幀數 (3 ~ 10 幀)
+    private var isBaseballMode: Boolean = true // true: 棒球 145g, false: 壘球 190g
 
     private var isRightHanded: Boolean = true
     private var selectedLensFacing: Int = CameraSelector.LENS_FACING_BACK
@@ -309,7 +311,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        overlayView.setResults(result, ballTrajectory, isRightHanded)
+                        overlayView.setResults(result, ballTrajectory, isRightHanded, minDetectionConfidence)
                     }
                 }
             }
@@ -375,19 +377,61 @@ class MainActivity : AppCompatActivity() {
     private fun getCameraHardwareSpecs(lensFacing: Int): String {
         return try {
             val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
-            for (id in cameraManager.cameraIdList) {
+            val cameraIds = cameraManager.cameraIdList
+            val sb = StringBuilder()
+            sb.append("📷 全機鏡頭規格 (以最高 FPS 幀率為主體)：\n")
+
+            for ((index, id) in cameraIds.withIndex()) {
                 val characteristics = cameraManager.getCameraCharacteristics(id)
                 val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
-                if (facing == lensFacing) {
-                    val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
-                    val fpsString = fpsRanges?.joinToString { "[${it.lower}, ${it.upper}]" } ?: "30, 60"
-                    val lensName = if (lensFacing == CameraSelector.LENS_FACING_BACK) "S24 後置主鏡頭" else "S24 前置自拍鏡頭"
-                    return "• 鏡頭: $lensName\n• 支援 FPS: $fpsString\n• 目前模式: 1280x720 @ 60 FPS"
+
+                val facingName = when (facing) {
+                    CameraCharacteristics.LENS_FACING_BACK -> "後置鏡頭 🔴"
+                    CameraCharacteristics.LENS_FACING_FRONT -> "前置鏡頭 🟢"
+                    else -> "外接鏡頭 🔵"
+                }
+
+                val isSelected = (facing == lensFacing)
+
+                // 1. 取得此鏡頭支援的所有 upper FPS 幀率 (由高到低排序，例: 120, 60, 30)
+                val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+                val upperFpsList = fpsRanges?.map { it.upper }?.distinct()?.sortedDescending() ?: listOf(60)
+                val maxFps = upperFpsList.firstOrNull() ?: 60
+
+                // 2. 取得此鏡頭支援的最高解析度
+                val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                val sizes = map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)
+                    ?: map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)
+                    ?: emptyArray()
+
+                val maxPixelSize = sizes.maxByOrNull { it.width * it.height }
+                val maxResLabel = if (maxPixelSize != null) {
+                    val pixels = maxPixelSize.width * maxPixelSize.height
+                    when {
+                        pixels >= 3840 * 2160 -> "4K (3840x2160)"
+                        pixels >= 2560 * 1440 -> "2K (2560x1440)"
+                        pixels >= 1920 * 1080 -> "FHD (1920x1080)"
+                        else -> "${maxPixelSize.width}x${maxPixelSize.height}"
+                    }
+                } else {
+                    "FHD (1920x1080)"
+                }
+
+                val selectMark = if (isSelected) " [使用中 ⭐]" else ""
+
+                // 3. 依 FPS 為主體格式化輸出 (強調最高 FPS 與相對應的最高畫質)
+                if (maxFps >= 120) {
+                    val resAt120 = if (maxPixelSize != null && maxPixelSize.width >= 3840) "FHD (1920x1080)" else maxResLabel
+                    sb.append("⚡ 鏡頭 #$index ($facingName$selectMark):\n")
+                    sb.append("   • 最高 $maxFps FPS ➔ 對應畫質 $resAt120\n")
+                    sb.append("   • 常規 60 FPS ➔ 對應畫質 $maxResLabel\n")
+                } else {
+                    sb.append("⚡ 鏡頭 #$index ($facingName$selectMark): 最高 $maxFps FPS ➔ 對應最高畫質 $maxResLabel\n")
                 }
             }
-            "• 鏡頭規格: 支援 60 FPS 高速拍攝"
+            sb.toString().trimEnd()
         } catch (e: Exception) {
-            "• 鏡頭規格: 支援 60 FPS 高速拍攝"
+            "📷 鏡頭規格: 支援 60 FPS 高速拍攝 (對應最高 FHD 畫質)"
         }
     }
 
@@ -494,13 +538,13 @@ class MainActivity : AppCompatActivity() {
         )
 
         val etMinDetect = createLabeledField(
-            "4. 🤖 AI 人體偵測信賴度 (0.1 ~ 0.9)",
+            "4. 🤖 AI 人體偵測信賴度 (0.10 ~ 0.99)",
             minDetectionConfidence.toString(),
             android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         )
 
         val etMinTrack = createLabeledField(
-            "5. 🎯 AI 關節追蹤信賴度 (0.1 ~ 0.9)",
+            "5. 🎯 AI 關節追蹤信賴度 (0.10 ~ 0.99)",
             minTrackingConfidence.toString(),
             android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         )
@@ -529,6 +573,36 @@ class MainActivity : AppCompatActivity() {
             android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         )
 
+        val etFlightFrames = createLabeledField(
+            "10. 🎯 出球 CV 追蹤捕捉幀數 (3 ~ 10 幀)",
+            flightCaptureFrames.toString(),
+            android.text.InputType.TYPE_CLASS_NUMBER
+        )
+
+        val tvBallTypeTitle = TextView(this).apply {
+            text = "11. 🥎 球種選擇 (Ball Type)"
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 13f
+            setPadding(0, 10, 0, 4)
+        }
+        val rgBallType = RadioGroup(this).apply {
+            orientation = RadioGroup.HORIZONTAL
+        }
+        val rbBaseball = RadioButton(this).apply {
+            text = "棒球 (145g)"
+            setTextColor(0xFFFFFFFF.toInt())
+            isChecked = isBaseballMode
+        }
+        val rbSoftball = RadioButton(this).apply {
+            text = "壘球 (190g)"
+            setTextColor(0xFFFFFFFF.toInt())
+            isChecked = !isBaseballMode
+        }
+        rgBallType.addView(rbBaseball)
+        rgBallType.addView(rbSoftball)
+        layout.addView(tvBallTypeTitle)
+        layout.addView(rgBallType)
+
         scrollView.addView(layout)
 
         AlertDialog.Builder(this)
@@ -538,12 +612,14 @@ class MainActivity : AppCompatActivity() {
                 selectedLensFacing = if (rbBack.isChecked) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
                 cooldownSec = etCooldown.text.toString().toFloatOrNull() ?: 1.5f
                 triggerSpeedKmh = etThreshold.text.toString().toFloatOrNull() ?: 50f
-                minDetectionConfidence = etMinDetect.text.toString().toFloatOrNull() ?: 0.65f
-                minTrackingConfidence = etMinTrack.text.toString().toFloatOrNull() ?: 0.50f
+                minDetectionConfidence = (etMinDetect.text.toString().toFloatOrNull() ?: 0.65f).coerceIn(0.10f, 0.99f)
+                minTrackingConfidence = (etMinTrack.text.toString().toFloatOrNull() ?: 0.50f).coerceIn(0.10f, 0.99f)
                 cameraDistanceMeters = etCameraDistance.text.toString().toFloatOrNull() ?: 4.0f
                 playerHeightCm = etHeight.text.toString().toFloatOrNull() ?: 175f
                 homePlateWidthCm = etPlateWidth.text.toString().toFloatOrNull() ?: 43.2f
                 speedMultiplier = etMultiplier.text.toString().toFloatOrNull() ?: 1.00f
+                flightCaptureFrames = (etFlightFrames.text.toString().toIntOrNull() ?: 5).coerceIn(3, 10)
+                isBaseballMode = rbBaseball.isChecked
 
                 btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
                 Toast.makeText(this, "設定已更新並重新載入鏡頭與 AI", Toast.LENGTH_SHORT).show()

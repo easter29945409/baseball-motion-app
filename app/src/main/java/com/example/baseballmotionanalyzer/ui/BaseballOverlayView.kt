@@ -73,15 +73,18 @@ class BaseballOverlayView @JvmOverloads constructor(
 
     private val homePlatePath = Path()
     private var isRightHanded: Boolean = true
+    private var minVisibilityThreshold: Float = 0.65f
 
     fun setResults(
         result: PoseLandmarkerResult?,
         points: List<Pair<Float, Float>>,
-        isRightHanded: Boolean = true
+        isRightHanded: Boolean = true,
+        minVisibilityThreshold: Float = 0.65f
     ) {
         this.poseResult = result
         this.trajectoryPoints = points
         this.isRightHanded = isRightHanded
+        this.minVisibilityThreshold = minVisibilityThreshold
         postInvalidateOnAnimation()
     }
 
@@ -90,10 +93,10 @@ class BaseballOverlayView @JvmOverloads constructor(
         val canvasWidth = width.toFloat()
         val canvasHeight = height.toFloat()
 
-        // 0. 繪製「打擊區引導虛線框」 (Batter Box Overlay)
-        val frameLeft = if (isRightHanded) canvasWidth * 0.20f else canvasWidth * 0.50f
+        // 0. 繪製「打擊區引導虛線框」 (Batter Box Overlay - 側邊 30% 佔比，留 70% 畫面給出球追蹤)
+        val frameLeft = if (isRightHanded) canvasWidth * 0.08f else canvasWidth * 0.62f
         val frameTop = canvasHeight * 0.15f
-        val frameRight = if (isRightHanded) canvasWidth * 0.50f else canvasWidth * 0.80f
+        val frameRight = if (isRightHanded) canvasWidth * 0.38f else canvasWidth * 0.92f
         val frameBottom = canvasHeight * 0.85f
 
         canvas.drawRect(frameLeft, frameTop, frameRight, frameBottom, guidancePaint)
@@ -128,16 +131,25 @@ class BaseballOverlayView @JvmOverloads constructor(
             canvas.drawPath(trajectoryPath, trajectoryPaint)
         }
 
-        // 2. 繪製 MediaPipe 33 點姿態與四肢端點 (包含可見度/置信度過濾，徹底防止背景鬼影)
+        // 2. 繪製 MediaPipe 33 點姿態與四肢端點 (含極致嚴格的 orElse(0f) 與軀幹置信度驗證，徹底防鬼影)
         poseResult?.landmarks()?.firstOrNull()?.let { landmarkList ->
-            val connections = PoseLandmarker.POSE_LANDMARKS
+            // 軀幹置信度合理性檢查
+            val leftShoulder = landmarkList.getOrNull(11)
+            val rightShoulder = landmarkList.getOrNull(12)
+            val torsoVisible = (leftShoulder?.visibility()?.orElse(0f) ?: 0f) >= minVisibilityThreshold ||
+                               (rightShoulder?.visibility()?.orElse(0f) ?: 0f) >= minVisibilityThreshold
 
+            if (!torsoVisible) return@let // 若連肩膀都不清晰，說明不是完整人體，直接拒絕繪製鬼影
+
+            val connections = PoseLandmarker.POSE_LANDMARKS
             connections.forEach { connection ->
                 val startLm = landmarkList[connection.start()]
                 val endLm = landmarkList[connection.end()]
 
-                val startVisible = startLm.visibility().orElse(1.0f) > 0.5f && startLm.presence().orElse(1.0f) > 0.5f
-                val endVisible = endLm.visibility().orElse(1.0f) > 0.5f && endLm.presence().orElse(1.0f) > 0.5f
+                val startVisible = startLm.visibility().orElse(0f) >= minVisibilityThreshold &&
+                                   startLm.presence().orElse(0f) >= minVisibilityThreshold
+                val endVisible = endLm.visibility().orElse(0f) >= minVisibilityThreshold &&
+                                 endLm.presence().orElse(0f) >= minVisibilityThreshold
 
                 if (startVisible && endVisible) {
                     val startX = startLm.x() * canvasWidth
@@ -152,7 +164,8 @@ class BaseballOverlayView @JvmOverloads constructor(
             val keyJointIndices = listOf(15, 16, 13, 14, 27, 28, 25, 26)
 
             landmarkList.forEachIndexed { index, landmark ->
-                val isVisible = landmark.visibility().orElse(1.0f) > 0.5f && landmark.presence().orElse(1.0f) > 0.5f
+                val isVisible = landmark.visibility().orElse(0f) >= minVisibilityThreshold &&
+                                landmark.presence().orElse(0f) >= minVisibilityThreshold
                 if (isVisible) {
                     val cx = landmark.x() * canvasWidth
                     val cy = landmark.y() * canvasHeight
