@@ -12,8 +12,11 @@ import android.util.Log
 import android.util.Size
 import android.view.View
 import android.widget.*
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
@@ -36,6 +39,14 @@ data class SwingRecord(
     val timestamp: String
 )
 
+data class CameraLensInfo(
+    val cameraId: String,
+    val facingName: String,
+    val maxFps: Int,
+    val maxResLabel: String,
+    val isSelected: Boolean
+)
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
@@ -53,6 +64,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvMaxSpeed: TextView
     private lateinit var tvAvgSpeed: TextView
     private lateinit var tvTotalSwings: TextView
+    private lateinit var tvFps: TextView
     private lateinit var cameraContainer: View
     private lateinit var historyContainer: View
 
@@ -67,9 +79,10 @@ class MainActivity : AppCompatActivity() {
     private var minTrackingConfidence: Float = 0.50f
     private var flightCaptureFrames: Int = 5 // 出球 CV 追蹤捕捉幀數 (3 ~ 10 幀)
     private var isBaseballMode: Boolean = true // true: 棒球 145g, false: 壘球 190g
+    private var currentCameraFps: Float = 60f // 動態相機幀率 (依據選取鏡頭硬體動態決定 60f / 120f)
 
     private var isRightHanded: Boolean = true
-    private var selectedLensFacing: Int = CameraSelector.LENS_FACING_BACK
+    private var selectedCameraId: String = "0"
     private var cameraProvider: ProcessCameraProvider? = null
     private var poseLandmarkerHelper: PoseLandmarkerHelper? = null
 
@@ -116,6 +129,7 @@ class MainActivity : AppCompatActivity() {
         tvMaxSpeed = findViewById(R.id.tvMaxSpeed)
         tvAvgSpeed = findViewById(R.id.tvAvgSpeed)
         tvTotalSwings = findViewById(R.id.tvTotalSwings)
+        tvFps = findViewById(R.id.tvFps)
         cameraContainer = findViewById(R.id.cameraContainer)
         historyContainer = findViewById(R.id.historyContainer)
 
@@ -149,7 +163,26 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun cycleCameraLens() {
+        val cameraList = getAvailableCameraList()
+        if (cameraList.isEmpty()) return
+
+        val currentIndex = cameraList.indexOfFirst { it.cameraId == selectedCameraId }
+        val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % cameraList.size else 0
+        val nextLens = cameraList[nextIndex]
+
+        selectedCameraId = nextLens.cameraId
+        Toast.makeText(this, "📷 已切換至 鏡頭 #${nextLens.cameraId} (${nextLens.facingName})", Toast.LENGTH_SHORT).show()
+        startCameraAndAnalysis()
+    }
+
     private fun switchToCameraTab() {
+        if (cameraContainer.visibility == View.VISIBLE) {
+            // 已在相機頁面時，點按 🎥 按鈕即可一鍵輪播切換下一個鏡頭
+            cycleCameraLens()
+            return
+        }
+
         cameraContainer.visibility = View.VISIBLE
         historyContainer.visibility = View.GONE
 
@@ -191,7 +224,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    @OptIn(ExperimentalCamera2Interop::class)
     private fun startCameraAndAnalysis() {
+        val cameraList = getAvailableCameraList()
+        val selectedLens = cameraList.firstOrNull { it.cameraId == selectedCameraId } ?: cameraList.firstOrNull()
+        currentCameraFps = (selectedLens?.maxFps ?: 60).toFloat()
+        if (::tvFps.isInitialized) {
+            tvFps.text = "🟢 ${currentCameraFps.toInt()} FPS"
+        }
+
         poseLandmarkerHelper?.clear()
         poseLandmarkerHelper = PoseLandmarkerHelper(
             context = this,
@@ -239,7 +280,7 @@ class MainActivity : AppCompatActivity() {
                                     trunkAngularVel = BaseballPhysicsEngine.calculateTrunkAngularVelocity(
                                         prevLsX, prevLsY, prevRsX, prevRsY,
                                         curLsX, curLsY, curRsX, curRsY,
-                                        60f
+                                        currentCameraFps
                                     )
                                 }
                                 prevLsX = curLsX
@@ -265,10 +306,10 @@ class MainActivity : AppCompatActivity() {
                                     playerHeightCm = playerHeightCm,
                                     isRightHanded = isRightHanded,
                                     trunkAngularVelocity = trunkAngularVel,
-                                    fps = 60f
+                                    fps = currentCameraFps
                                 )
 
-                                // 揮棒後定格呈現邏輯 (Post-Swing Peak Latching Mode)
+                                // 揮棒後定格呈現與出球 CV 追蹤 (Post-Swing Peak Latching Mode)
                                 if (!isInCooldown) {
                                     if (metrics.speedKmh >= triggerSpeedKmh && metrics.isCorrectDirection) {
                                         isSwingingStroke = true
@@ -279,7 +320,7 @@ class MainActivity : AppCompatActivity() {
                                             peakAngularVelocity = metrics.angularVelocityDegSec
                                         }
                                     } else if (isSwingingStroke) {
-                                        // 揮棒動作剛剛結束 $\rightarrow$ 寫入歷史並啟動定格冷卻
+                                        // 揮棒動作剛剛結束 -> 寫入歷史並啟動定格冷卻
                                         isSwingingStroke = false
                                         lastSwingTimeMs = now
                                         swingCount++
@@ -306,7 +347,8 @@ class MainActivity : AppCompatActivity() {
                                     }
                                 }
 
-                                if (ballTrajectory.size >= 15) ballTrajectory.removeAt(0)
+                                val maxLen = (flightCaptureFrames * 3).coerceAtLeast(10)
+                                if (ballTrajectory.size >= maxLen) ballTrajectory.removeAt(0)
                                 ballTrajectory.add(Pair(curX, curY))
                             }
                         }
@@ -358,8 +400,19 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 cameraProvider?.unbindAll()
+
                 val cameraSelector = CameraSelector.Builder()
-                    .requireLensFacing(selectedLensFacing)
+                    .addCameraFilter { cameraInfos ->
+                        val filtered = cameraInfos.filter { cameraInfo ->
+                            try {
+                                val c2Info = Camera2CameraInfo.from(cameraInfo)
+                                c2Info.cameraId == selectedCameraId
+                            } catch (e: Exception) {
+                                false
+                            }
+                        }
+                        if (filtered.isNotEmpty()) filtered else cameraInfos
+                    }
                     .build()
 
                 cameraProvider?.bindToLifecycle(
@@ -369,19 +422,19 @@ class MainActivity : AppCompatActivity() {
                     imageAnalysis
                 )
             } catch (e: Exception) {
+                Log.e(TAG, "Camera binding error: ${e.message}")
                 e.printStackTrace()
             }
         }, ContextCompat.getMainExecutor(this))
     }
 
-    private fun getCameraHardwareSpecs(lensFacing: Int): String {
-        return try {
+    private fun getAvailableCameraList(): List<CameraLensInfo> {
+        val list = mutableListOf<CameraLensInfo>()
+        try {
             val cameraManager = getSystemService(Context.CAMERA_SERVICE) as CameraManager
             val cameraIds = cameraManager.cameraIdList
-            val sb = StringBuilder()
-            sb.append("📷 全機鏡頭規格 (以最高 FPS 幀率為主體)：\n")
 
-            for ((index, id) in cameraIds.withIndex()) {
+            for (id in cameraIds) {
                 val characteristics = cameraManager.getCameraCharacteristics(id)
                 val facing = characteristics.get(CameraCharacteristics.LENS_FACING)
 
@@ -391,14 +444,10 @@ class MainActivity : AppCompatActivity() {
                     else -> "外接鏡頭 🔵"
                 }
 
-                val isSelected = (facing == lensFacing)
-
-                // 1. 取得此鏡頭支援的所有 upper FPS 幀率 (由高到低排序，例: 120, 60, 30)
                 val fpsRanges = characteristics.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
                 val upperFpsList = fpsRanges?.map { it.upper }?.distinct()?.sortedDescending() ?: listOf(60)
                 val maxFps = upperFpsList.firstOrNull() ?: 60
 
-                // 2. 取得此鏡頭支援的最高解析度
                 val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
                 val sizes = map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)
                     ?: map?.getOutputSizes(android.graphics.SurfaceTexture::class.java)
@@ -417,22 +466,41 @@ class MainActivity : AppCompatActivity() {
                     "FHD (1920x1080)"
                 }
 
-                val selectMark = if (isSelected) " [使用中 ⭐]" else ""
-
-                // 3. 依 FPS 為主體格式化輸出 (強調最高 FPS 與相對應的最高畫質)
-                if (maxFps >= 120) {
-                    val resAt120 = if (maxPixelSize != null && maxPixelSize.width >= 3840) "FHD (1920x1080)" else maxResLabel
-                    sb.append("⚡ 鏡頭 #$index ($facingName$selectMark):\n")
-                    sb.append("   • 最高 $maxFps FPS ➔ 對應畫質 $resAt120\n")
-                    sb.append("   • 常規 60 FPS ➔ 對應畫質 $maxResLabel\n")
-                } else {
-                    sb.append("⚡ 鏡頭 #$index ($facingName$selectMark): 最高 $maxFps FPS ➔ 對應最高畫質 $maxResLabel\n")
-                }
+                list.add(
+                    CameraLensInfo(
+                        cameraId = id,
+                        facingName = facingName,
+                        maxFps = maxFps,
+                        maxResLabel = maxResLabel,
+                        isSelected = (id == selectedCameraId)
+                    )
+                )
             }
-            sb.toString().trimEnd()
         } catch (e: Exception) {
-            "📷 鏡頭規格: 支援 60 FPS 高速拍攝 (對應最高 FHD 畫質)"
+            Log.e(TAG, "Error querying camera list: ${e.message}")
         }
+        if (list.isEmpty()) {
+            list.add(CameraLensInfo("0", "後置主鏡頭 🔴", 60, "FHD (1920x1080)", true))
+        }
+        return list
+    }
+
+    private fun getCameraHardwareSpecs(): String {
+        val cameraList = getAvailableCameraList()
+        val sb = StringBuilder()
+        sb.append("📷 全機偵測到 ${cameraList.size} 顆鏡頭規格 (以最高 FPS 幀率為主體)：\n")
+
+        for (lens in cameraList) {
+            val selectMark = if (lens.isSelected) " [使用中 ⭐]" else ""
+            if (lens.maxFps >= 120) {
+                sb.append("⚡ 鏡頭 #${lens.cameraId} (${lens.facingName}$selectMark):\n")
+                sb.append("   • 最高 ${lens.maxFps} FPS ➔ 對應畫質 FHD (1920x1080)\n")
+                sb.append("   • 常規 60 FPS ➔ 對應畫質 ${lens.maxResLabel}\n")
+            } else {
+                sb.append("⚡ 鏡頭 #${lens.cameraId} (${lens.facingName}$selectMark): 最高 ${lens.maxFps} FPS ➔ 對應最高畫質 ${lens.maxResLabel}\n")
+            }
+        }
+        return sb.toString().trimEnd()
     }
 
     private fun updateHistoryStats() {
@@ -475,7 +543,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(40, 20, 40, 20)
         }
 
-        val hwSpecs = getCameraHardwareSpecs(selectedLensFacing)
+        val hwSpecs = getCameraHardwareSpecs()
         val tvInfo = TextView(this).apply {
             text = "ℹ️ 當前相機硬體規格 (Camera2 Specs):\n$hwSpecs"
             setTextColor(0xFF00E5FF.toInt())
@@ -501,27 +569,31 @@ class MainActivity : AppCompatActivity() {
             return etInput
         }
 
+        val cameraList = getAvailableCameraList()
+
         val tvLensTitle = TextView(this).apply {
-            text = "1. 📷 選擇相機鏡頭 (Camera Lens)"
+            text = "1. 📷 選擇動態偵測鏡頭 (全機共 ${cameraList.size} 顆鏡頭可隨時切換)"
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 13f
             setPadding(0, 10, 0, 4)
         }
+
         val rgLens = RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
+            orientation = RadioGroup.VERTICAL
         }
-        val rbBack = RadioButton(this).apply {
-            text = "後置主鏡頭"
-            setTextColor(0xFFFFFFFF.toInt())
-            isChecked = (selectedLensFacing == CameraSelector.LENS_FACING_BACK)
+
+        cameraList.forEach { lens ->
+            val rb = RadioButton(this).apply {
+                id = View.generateViewId()
+                val activeTag = if (lens.isSelected) " [目前使用中 ⭐]" else ""
+                text = "鏡頭 #${lens.cameraId} (${lens.facingName}$activeTag): 最高 ${lens.maxFps} FPS (${lens.maxResLabel})"
+                setTextColor(if (lens.isSelected) 0xFF00E5FF.toInt() else 0xFFFFFFFF.toInt())
+                textSize = 12f
+                tag = lens.cameraId
+                isChecked = lens.isSelected
+            }
+            rgLens.addView(rb)
         }
-        val rbFront = RadioButton(this).apply {
-            text = "前置自拍鏡頭"
-            setTextColor(0xFFFFFFFF.toInt())
-            isChecked = (selectedLensFacing == CameraSelector.LENS_FACING_FRONT)
-        }
-        rgLens.addView(rbBack)
-        rgLens.addView(rbFront)
         layout.addView(tvLensTitle)
         layout.addView(rgLens)
 
@@ -609,7 +681,13 @@ class MainActivity : AppCompatActivity() {
             .setTitle("⚙️ 系統進階參數與相機鏡頭設定")
             .setView(scrollView)
             .setPositiveButton("確定儲存並套用") { _, _ ->
-                selectedLensFacing = if (rbBack.isChecked) CameraSelector.LENS_FACING_BACK else CameraSelector.LENS_FACING_FRONT
+                val checkedRbId = rgLens.checkedRadioButtonId
+                if (checkedRbId != -1) {
+                    val checkedRb = rgLens.findViewById<RadioButton>(checkedRbId)
+                    val newCameraId = checkedRb?.tag as? String ?: "0"
+                    selectedCameraId = newCameraId
+                }
+
                 cooldownSec = etCooldown.text.toString().toFloatOrNull() ?: 1.5f
                 triggerSpeedKmh = etThreshold.text.toString().toFloatOrNull() ?: 50f
                 minDetectionConfidence = (etMinDetect.text.toString().toFloatOrNull() ?: 0.65f).coerceIn(0.10f, 0.99f)
@@ -622,7 +700,7 @@ class MainActivity : AppCompatActivity() {
                 isBaseballMode = rbBaseball.isChecked
 
                 btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
-                Toast.makeText(this, "設定已更新並重新載入鏡頭與 AI", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "設定已更新並載入 鏡頭 #${selectedCameraId}", Toast.LENGTH_SHORT).show()
 
                 startCameraAndAnalysis()
             }
