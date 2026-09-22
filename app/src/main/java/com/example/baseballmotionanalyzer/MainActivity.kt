@@ -435,7 +435,7 @@ class MainActivity : AppCompatActivity() {
         val tvInfo = TextView(this).apply {
             text = "ℹ️ 當前相機硬體規格 (Camera2 Specs):\n$hwSpecs"
             setTextColor(0xFF00E5FF.toInt())
-            textSize = 12sp
+            textSize = 12f
             setPadding(0, 0, 0, 20)
         }
         layout.addView(tvInfo)
@@ -444,7 +444,7 @@ class MainActivity : AppCompatActivity() {
             val tvLabel = TextView(this).apply {
                 text = titleText
                 setTextColor(0xFFFFFFFF.toInt())
-                textSize = 13sp
+                textSize = 13f
                 setPadding(0, 10, 0, 4)
             }
             val etInput = EditText(this).apply {
@@ -460,7 +460,7 @@ class MainActivity : AppCompatActivity() {
         val tvLensTitle = TextView(this).apply {
             text = "1. 📷 選擇相機鏡頭 (Camera Lens)"
             setTextColor(0xFFFFFFFF.toInt())
-            textSize = 13sp
+            textSize = 13f
             setPadding(0, 10, 0, 4)
         }
         val rgLens = RadioGroup(this).apply {
