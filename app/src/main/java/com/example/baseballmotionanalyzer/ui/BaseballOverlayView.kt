@@ -74,17 +74,20 @@ class BaseballOverlayView @JvmOverloads constructor(
     private val homePlatePath = Path()
     private var isRightHanded: Boolean = true
     private var minVisibilityThreshold: Float = 0.65f
+    private var cameraDistanceMeters: Float = 4.0f
 
     fun setResults(
         result: PoseLandmarkerResult?,
         points: List<Pair<Float, Float>>,
         isRightHanded: Boolean = true,
-        minVisibilityThreshold: Float = 0.65f
+        minVisibilityThreshold: Float = 0.65f,
+        cameraDistanceMeters: Float = 4.0f
     ) {
         this.poseResult = result
         this.trajectoryPoints = points
         this.isRightHanded = isRightHanded
         this.minVisibilityThreshold = minVisibilityThreshold
+        this.cameraDistanceMeters = cameraDistanceMeters
         postInvalidateOnAnimation()
     }
 
@@ -92,6 +95,9 @@ class BaseballOverlayView @JvmOverloads constructor(
         super.onDraw(canvas)
         val canvasWidth = width.toFloat()
         val canvasHeight = height.toFloat()
+
+        // 光學透視縮放比例 (以 4.0 米為標準參考基準 1.0x，3米變大 1.33x，6米變小 0.67x)
+        val distanceFactor = (4.0f / cameraDistanceMeters.coerceIn(3.0f, 6.0f))
 
         // 0. 繪製「打擊區引導虛線框」 (Batter Box Overlay - 側邊 30% 佔比，留 70% 畫面給出球追蹤)
         val frameLeft = if (isRightHanded) canvasWidth * 0.08f else canvasWidth * 0.62f
@@ -103,12 +109,12 @@ class BaseballOverlayView @JvmOverloads constructor(
         val stanceText = if (isRightHanded) "🎯 打者區域 (右打 RHH)" else "🎯 打者區域 (左打 LHH)"
         canvas.drawText(stanceText, frameLeft + 10f, frameTop + 35f, guidanceTextPaint)
 
-        // 繪製標準五邊形「本壘板 (Home Plate)」對齊框 (前平邊朝投手/上、後尖端朝捕手/下)
+        // 繪製標準五邊形「本壘板 (Home Plate)」動態定位框 (前平邊朝投手/上、後尖端朝捕手/下)
         val plateCenterX = canvasWidth * 0.50f
         val plateTopY = canvasHeight * 0.76f
-        val plateWidth = canvasWidth * 0.12f   // 代表 43.2cm 本壘板
-        val plateSideLen = canvasHeight * 0.04f // 21.6cm 側邊
-        val plateApexY = plateTopY + canvasHeight * 0.08f // 尖端指向捕手/主審
+        val plateWidth = canvasWidth * 0.12f * distanceFactor   // 43.2cm 本壘板動態視覺縮放
+        val plateSideLen = canvasHeight * 0.04f * distanceFactor // 21.6cm 側邊動態視覺縮放
+        val plateApexY = plateTopY + canvasHeight * 0.08f * distanceFactor // 尖端指向捕手/主審
 
         homePlatePath.reset()
         homePlatePath.moveTo(plateCenterX - plateWidth / 2f, plateTopY) // 左上 (平邊)
@@ -119,7 +125,8 @@ class BaseballOverlayView @JvmOverloads constructor(
         homePlatePath.close()
 
         canvas.drawPath(homePlatePath, guidancePaint)
-        canvas.drawText("本壘板 (Home Plate 🔻)", plateCenterX - 90f, plateTopY - 10f, guidanceTextPaint)
+        val plateLabel = String.format("本壘板 (拍攝距離 %.1fm 🔻)", cameraDistanceMeters)
+        canvas.drawText(plateLabel, plateCenterX - 110f, plateTopY - 10f, guidanceTextPaint)
 
         // 1. 繪製殘影動態軌跡
         if (trajectoryPoints.size > 1) {

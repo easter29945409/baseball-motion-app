@@ -56,6 +56,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnBackToCamera: Button
     private lateinit var btnHeight: Button
     private lateinit var btnBatterSide: Button
+    private lateinit var btnDistance: Button
     private lateinit var btnSettings: Button
     private lateinit var tvSpeed: TextView
     private lateinit var tvAngle: TextView
@@ -121,6 +122,7 @@ class MainActivity : AppCompatActivity() {
         btnBackToCamera = findViewById(R.id.btnBackToCamera)
         btnHeight = findViewById(R.id.btnHeight)
         btnBatterSide = findViewById(R.id.btnBatterSide)
+        btnDistance = findViewById(R.id.btnDistance)
         btnSettings = findViewById(R.id.btnSettings)
         tvSpeed = findViewById(R.id.tvSpeed)
         tvAngle = findViewById(R.id.tvAngle)
@@ -135,6 +137,7 @@ class MainActivity : AppCompatActivity() {
 
         btnHeight.setOnClickListener { showHeightInputDialog() }
         btnBatterSide.setOnClickListener { toggleBatterSide() }
+        btnDistance.setOnClickListener { cycleCameraDistance() }
         btnSettings.setOnClickListener { showSettingsDialog() }
 
         btnTabCamera.setOnClickListener { switchToCameraTab() }
@@ -173,6 +176,16 @@ class MainActivity : AppCompatActivity() {
 
         selectedCameraId = nextLens.cameraId
         Toast.makeText(this, "📷 已切換至 鏡頭 #${nextLens.cameraId} (${nextLens.facingName})", Toast.LENGTH_SHORT).show()
+        startCameraAndAnalysis()
+    }
+
+    private fun cycleCameraDistance() {
+        val presets = floatArrayOf(3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 6.0f)
+        val currentIndex = presets.indexOfFirst { abs(it - cameraDistanceMeters) < 0.1f }
+        val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % presets.size else 2
+        cameraDistanceMeters = presets[nextIndex]
+        btnDistance.text = String.format("🎥 距離: %.1fm", cameraDistanceMeters)
+        Toast.makeText(this, "🎥 已切換拍攝距離為 ${cameraDistanceMeters} 米 (本壘板動態縮放對齊中)", Toast.LENGTH_SHORT).show()
         startCameraAndAnalysis()
     }
 
@@ -353,7 +366,7 @@ class MainActivity : AppCompatActivity() {
                             }
                         }
 
-                        overlayView.setResults(result, ballTrajectory, isRightHanded, minDetectionConfidence)
+                        overlayView.setResults(result, ballTrajectory, isRightHanded, minDetectionConfidence, cameraDistanceMeters)
                     }
                 }
             }
@@ -692,7 +705,7 @@ class MainActivity : AppCompatActivity() {
                 triggerSpeedKmh = etThreshold.text.toString().toFloatOrNull() ?: 50f
                 minDetectionConfidence = (etMinDetect.text.toString().toFloatOrNull() ?: 0.65f).coerceIn(0.10f, 0.99f)
                 minTrackingConfidence = (etMinTrack.text.toString().toFloatOrNull() ?: 0.50f).coerceIn(0.10f, 0.99f)
-                cameraDistanceMeters = etCameraDistance.text.toString().toFloatOrNull() ?: 4.0f
+                cameraDistanceMeters = (etCameraDistance.text.toString().toFloatOrNull() ?: 4.0f).coerceIn(3.0f, 6.0f)
                 playerHeightCm = etHeight.text.toString().toFloatOrNull() ?: 175f
                 homePlateWidthCm = etPlateWidth.text.toString().toFloatOrNull() ?: 43.2f
                 speedMultiplier = etMultiplier.text.toString().toFloatOrNull() ?: 1.00f
@@ -700,6 +713,7 @@ class MainActivity : AppCompatActivity() {
                 isBaseballMode = rbBaseball.isChecked
 
                 btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
+                btnDistance.text = String.format("🎥 距離: %.1fm", cameraDistanceMeters)
                 Toast.makeText(this, "設定已更新並載入 鏡頭 #${selectedCameraId}", Toast.LENGTH_SHORT).show()
 
                 startCameraAndAnalysis()
