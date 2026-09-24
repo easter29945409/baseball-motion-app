@@ -42,6 +42,14 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
 
+data class CameraLensInfo(
+    val cameraId: String,
+    val facingName: String,
+    val maxFps: Int,
+    val maxResLabel: String,
+    val isSelected: Boolean
+)
+
 class MainActivity : AppCompatActivity() {
 
     private lateinit var previewView: PreviewView
@@ -54,7 +62,6 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnBatterSide: Button
     private lateinit var btnDistance: Button
     private lateinit var btnSettings: Button
-    private lateinit var tvExportCsv: Button
     private lateinit var btnExportCsv: Button
     private lateinit var btnClearAllHistory: Button
     private lateinit var tvPeakSpeed: TextView
@@ -142,6 +149,7 @@ class MainActivity : AppCompatActivity() {
         btnDistance = findViewById(R.id.btnDistance)
         btnSettings = findViewById(R.id.btnSettings)
         btnExportCsv = findViewById(R.id.btnExportCsv)
+        btnClearAllHistory = findViewById(R.id.btnClearAllHistory)
         tvPeakSpeed = findViewById(R.id.tvPeakSpeed)
         tvPeakAngle = findViewById(R.id.tvPeakAngle)
         tvPeakAngularVelocity = findViewById(R.id.tvPeakAngularVelocity)
@@ -167,7 +175,13 @@ class MainActivity : AppCompatActivity() {
         btnDistance.setOnClickListener { cycleCameraDistance() }
         btnSettings.setOnClickListener { showSettingsDialog() }
 
-        btnTabCamera.setOnClickListener { switchToCameraTab() }
+        btnTabCamera.setOnClickListener {
+            if (cameraContainer.visibility == View.VISIBLE) {
+                cycleCameraLens()
+            } else {
+                switchToCameraTab()
+            }
+        }
         btnTabHistory.setOnClickListener { switchToHistoryTab() }
         btnBackToCamera.setOnClickListener { switchToCameraTab() }
 
