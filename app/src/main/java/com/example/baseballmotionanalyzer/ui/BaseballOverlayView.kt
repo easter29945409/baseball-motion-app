@@ -112,21 +112,29 @@ class BaseballOverlayView @JvmOverloads constructor(
         // 繪製標準五邊形「本壘板 (Home Plate)」動態定位框 (前平邊朝投手/上、後尖端朝捕手/下)
         val plateCenterX = canvasWidth * 0.50f
         val plateTopY = canvasHeight * 0.76f
-        val plateWidth = canvasWidth * 0.12f * distanceFactor   // 43.2cm 本壘板動態視覺縮放
-        val plateSideLen = canvasHeight * 0.04f * distanceFactor // 21.6cm 側邊動態視覺縮放
-        val plateApexY = plateTopY + canvasHeight * 0.08f * distanceFactor // 尖端指向捕手/主審
+
+        // 光學相機水平視野 (Standard FOV ≈ 65°)，畫面涵蓋物理寬度 W_scene ≈ 1.274 * D (米)
+        val sceneWidthMeters = 1.274f * cameraDistanceMeters.coerceIn(3.0f, 6.0f)
+        val homePlateWidthMeters = 0.4318f // MLB/CPBL 標準本壘板前平邊寬度 17 Inches (43.18 cm)
+        val plateWidthFraction = homePlateWidthMeters / sceneWidthMeters
+
+        // 精確換算本壘板在螢幕上的動態像素尺寸 (對應 3.0m ~ 6.0m 攝影距離)
+        val plateWidth = canvasWidth * plateWidthFraction
+        // 標準本壘板比例：側邊長為寬度 50% (21.59 cm)，總深度等於寬度 (43.18 cm)
+        val plateSideLen = plateWidth * 0.5f
+        val plateApexY = plateTopY + plateWidth
 
         homePlatePath.reset()
-        homePlatePath.moveTo(plateCenterX - plateWidth / 2f, plateTopY) // 左上 (平邊)
+        homePlatePath.moveTo(plateCenterX - plateWidth / 2f, plateTopY) // 左上 (平邊朝投手)
         homePlatePath.lineTo(plateCenterX + plateWidth / 2f, plateTopY) // 右上 (平邊朝投手)
-        homePlatePath.lineTo(plateCenterX + plateWidth / 2f, plateTopY + plateSideLen) // 右側邊
-        homePlatePath.lineTo(plateCenterX, plateApexY) // 後尖端 (指向捕手/主審 🔻)
-        homePlatePath.lineTo(plateCenterX - plateWidth / 2f, plateTopY + plateSideLen) // 左側邊
+        homePlatePath.lineTo(plateCenterX + plateWidth / 2f, plateTopY + plateSideLen) // 右側平行邊 (21.6cm)
+        homePlatePath.lineTo(plateCenterX, plateApexY) // 後尖端 (指向捕手/主審 🔻，總深 43.2cm)
+        homePlatePath.lineTo(plateCenterX - plateWidth / 2f, plateTopY + plateSideLen) // 左側平行邊 (21.6cm)
         homePlatePath.close()
 
         canvas.drawPath(homePlatePath, guidancePaint)
-        val plateLabel = String.format("本壘板 (拍攝距離 %.1fm 🔻)", cameraDistanceMeters)
-        canvas.drawText(plateLabel, plateCenterX - 110f, plateTopY - 10f, guidanceTextPaint)
+        val plateLabel = String.format("本壘板 43.2cm (距離 %.1fm 🔻)", cameraDistanceMeters)
+        canvas.drawText(plateLabel, plateCenterX - 130f, plateTopY - 10f, guidanceTextPaint)
 
         // 1. 繪製殘影動態軌跡
         if (trajectoryPoints.size > 1) {

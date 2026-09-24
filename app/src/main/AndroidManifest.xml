@@ -13,18 +13,38 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.BaseballMotionAnalyzer"
         tools:targetApi="31">
-        
+
+        <!-- 登入與打者管理首頁 Activity -->
         <activity
-            android:name=".MainActivity"
+            android:name=".ui.LoginActivity"
             android:exported="true"
-            android:screenOrientation="landscape"
-            android:configChanges="orientation|screenSize"
+            android:screenOrientation="portrait"
             android:theme="@style/Theme.BaseballMotionAnalyzer">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- 即時相機分析與歷史紀錄主頁 Activity -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize"
+            android:theme="@style/Theme.BaseballMotionAnalyzer" />
+
+        <!-- FileProvider 用於 CSV 數據報表分享導出 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
     </application>
 
 </manifest>

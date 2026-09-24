@@ -47,9 +47,24 @@
             app:layout_constraintTop_toTopOf="parent">
 
             <Button
+                android:id="@+id/btnPlayerProfile"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="#801E293B"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:paddingHorizontal="10dp"
+                android:paddingVertical="6dp"
+                android:text="👤 #18 王大明"
+                android:textColor="#00E5FF"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <Button
                 android:id="@+id/btnHeight"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:layout_marginStart="4dp"
                 android:backgroundTint="#801E293B"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
@@ -64,7 +79,7 @@
                 android:id="@+id/btnBatterSide"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
                 android:backgroundTint="#801E293B"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
@@ -79,7 +94,7 @@
                 android:id="@+id/btnDistance"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="4dp"
                 android:backgroundTint="#801E293B"
                 android:minWidth="0dp"
                 android:minHeight="0dp"
@@ -154,111 +169,176 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- 微型高透明度底部數據面板 (Translucent Glassmorphism #600F172A) -->
+        <!-- 微型高透明度雙排數據面板 (Translucent Glassmorphism #600F172A) -->
         <LinearLayout
             android:id="@+id/bottomMetricsPanel"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="#600F172A"
-            android:orientation="horizontal"
-            android:padding="6dp"
+            android:background="#700F172A"
+            android:orientation="vertical"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
             app:layout_constraintBottom_toBottomOf="parent">
 
+            <!-- 第一排：⚡ 揮棒鎖定峰值 (Peak Latched Values) -->
             <LinearLayout
-                android:layout_width="0dp"
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⚡ 揮棒初速(峰值)"
+                        android:textColor="#CBD5E1"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvPeakSpeed"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.0 km/h"
+                        android:textColor="#00E5FF"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⚡ 出球仰角(峰值)"
+                        android:textColor="#CBD5E1"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvPeakAngle"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.0°"
+                        android:textColor="#FFEA00"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⚡ 軀幹角速度(峰值)"
+                        android:textColor="#CBD5E1"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvPeakAngularVelocity"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0 deg/s"
+                        android:textColor="#E040FB"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="⚡ 預估距離(峰值)"
+                        android:textColor="#CBD5E1"
+                        android:textSize="10sp" />
+
+                    <TextView
+                        android:id="@+id/tvPeakDistance"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="0.0 m"
+                        android:textColor="#00E676"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <!-- 分隔微線 -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginVertical="2dp"
+                android:background="#334155" />
+
+            <!-- 第二排：🔄 測試參考：即時動態連線數據 (Live Real-Time Debug Reference) -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
 
                 <TextView
-                    android:layout_width="wrap_content"
+                    android:id="@+id/tvLiveSpeed"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="初速/揮棒速"
-                    android:textColor="#CBD5E1"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="🔄 即時: 0.0 km/h"
+                    android:textColor="#7DD3FC"
                     android:textSize="10sp" />
 
                 <TextView
-                    android:id="@+id/tvSpeed"
-                    android:layout_width="wrap_content"
+                    android:id="@+id/tvLiveAngle"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="0.0 km/h"
-                    android:textColor="#00E5FF"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="出球仰角"
-                    android:textColor="#CBD5E1"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="🔄 即時: 0.0°"
+                    android:textColor="#FEF08A"
                     android:textSize="10sp" />
 
                 <TextView
-                    android:id="@+id/tvAngle"
-                    android:layout_width="wrap_content"
+                    android:id="@+id/tvLiveAngularVelocity"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="0.0°"
-                    android:textColor="#FFEA00"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="轉體角速度"
-                    android:textColor="#CBD5E1"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="🔄 即時: 0 deg/s"
+                    android:textColor="#F0ABFC"
                     android:textSize="10sp" />
 
                 <TextView
-                    android:id="@+id/tvAngularVelocity"
-                    android:layout_width="wrap_content"
+                    android:id="@+id/tvLiveDistance"
+                    android:layout_width="0dp"
                     android:layout_height="wrap_content"
-                    android:text="0 deg/s"
-                    android:textColor="#E040FB"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:gravity="center"
-                android:orientation="vertical">
-
-                <TextView
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="預估距離"
-                    android:textColor="#CBD5E1"
+                    android:layout_weight="1"
+                    android:gravity="center"
+                    android:text="🔄 即時: 0.0 m"
+                    android:textColor="#86EFAC"
                     android:textSize="10sp" />
-
-                <TextView
-                    android:id="@+id/tvDistance"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.0 m"
-                    android:textColor="#00E676"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
             </LinearLayout>
+
         </LinearLayout>
     </androidx.constraintlayout.widget.ConstraintLayout>
 
@@ -276,7 +356,7 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent">
 
-        <!-- 頂部歷史頁標題列 (含切回相機按鈕) -->
+        <!-- 頂部歷史頁標題列 (含匯出 CSV、清空歷史、切回相機按鈕) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -288,9 +368,33 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="📄 近期打擊數據紀錄 (相機已關閉)"
+                android:text="📄 揮棒數據紀錄"
                 android:textColor="#00E5FF"
                 android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnExportCsv"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#10B981"
+                android:paddingHorizontal="10dp"
+                android:text="📊 匯出 CSV"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/btnClearAllHistory"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:backgroundTint="#EF4444"
+                android:paddingHorizontal="10dp"
+                android:text="🗑️ 清空"
+                android:textColor="#FFFFFF"
+                android:textSize="12sp"
                 android:textStyle="bold" />
 
             <Button
@@ -298,8 +402,10 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:backgroundTint="#00E5FF"
+                android:paddingHorizontal="10dp"
                 android:text="🎥 切回相機"
                 android:textColor="#000000"
+                android:textSize="12sp"
                 android:textStyle="bold" />
         </LinearLayout>
 

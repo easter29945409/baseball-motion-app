@@ -2,6 +2,7 @@ package com.example.baseballmotionanalyzer
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Matrix
@@ -22,30 +23,24 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import com.example.baseballmotionanalyzer.analytics.BaseballPhysicsEngine
 import com.example.baseballmotionanalyzer.cv.PoseLandmarkerHelper
+import com.example.baseballmotionanalyzer.db.SwingDatabaseHelper
+import com.example.baseballmotionanalyzer.db.SwingRecordEntity
+import com.example.baseballmotionanalyzer.model.PlayerProfile
 import com.example.baseballmotionanalyzer.ui.BaseballOverlayView
+import com.example.baseballmotionanalyzer.ui.LoginActivity
+import com.example.baseballmotionanalyzer.ui.SwingHistoryAdapter
 import com.google.mediapipe.framework.image.MPImage
 import com.google.mediapipe.tasks.vision.poselandmarker.PoseLandmarkerResult
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 import kotlin.math.abs
-
-data class SwingRecord(
-    val id: Int,
-    val speedKmh: Float,
-    val launchAngleDeg: Float,
-    val distanceMeters: Float,
-    val angularVelocityDegSec: Float,
-    val timestamp: String
-)
-
-data class CameraLensInfo(
-    val cameraId: String,
-    val facingName: String,
-    val maxFps: Int,
-    val maxResLabel: String,
-    val isSelected: Boolean
-)
 
 class MainActivity : AppCompatActivity() {
 
@@ -54,23 +49,36 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnTabCamera: Button
     private lateinit var btnTabHistory: Button
     private lateinit var btnBackToCamera: Button
+    private lateinit var btnPlayerProfile: Button
     private lateinit var btnHeight: Button
     private lateinit var btnBatterSide: Button
     private lateinit var btnDistance: Button
     private lateinit var btnSettings: Button
-    private lateinit var tvSpeed: TextView
-    private lateinit var tvAngle: TextView
-    private lateinit var tvAngularVelocity: TextView
-    private lateinit var tvDistance: TextView
+    private lateinit var tvExportCsv: Button
+    private lateinit var btnExportCsv: Button
+    private lateinit var btnClearAllHistory: Button
+    private lateinit var tvPeakSpeed: TextView
+    private lateinit var tvPeakAngle: TextView
+    private lateinit var tvPeakAngularVelocity: TextView
+    private lateinit var tvPeakDistance: TextView
+    private lateinit var tvLiveSpeed: TextView
+    private lateinit var tvLiveAngle: TextView
+    private lateinit var tvLiveAngularVelocity: TextView
+    private lateinit var tvLiveDistance: TextView
     private lateinit var tvMaxSpeed: TextView
     private lateinit var tvAvgSpeed: TextView
     private lateinit var tvTotalSwings: TextView
     private lateinit var tvFps: TextView
     private lateinit var cameraContainer: View
     private lateinit var historyContainer: View
+    private lateinit var rvHistory: RecyclerView
+
+    private lateinit var historyAdapter: SwingHistoryAdapter
+    private lateinit var dbHelper: SwingDatabaseHelper
+    private lateinit var currentBatter: PlayerProfile
 
     // 偏好設定與運動學變數
-    private var playerHeightCm: Float = 175f
+    private var playerHeightCm: Float = 170f
     private var cameraDistanceMeters: Float = 4.0f
     private var homePlateWidthCm: Float = 43.2f
     private var triggerSpeedKmh: Float = 50f
@@ -80,7 +88,7 @@ class MainActivity : AppCompatActivity() {
     private var minTrackingConfidence: Float = 0.50f
     private var flightCaptureFrames: Int = 5 // 出球 CV 追蹤捕捉幀數 (3 ~ 10 幀)
     private var isBaseballMode: Boolean = true // true: 棒球 145g, false: 壘球 190g
-    private var currentCameraFps: Float = 60f // 動態相機幀率 (依據選取鏡頭硬體動態決定 60f / 120f)
+    private var currentCameraFps: Float = 60f // 動態相機幀率 (60f / 120f)
 
     private var isRightHanded: Boolean = true
     private var selectedCameraId: String = "0"
@@ -88,8 +96,6 @@ class MainActivity : AppCompatActivity() {
     private var poseLandmarkerHelper: PoseLandmarkerHelper? = null
 
     private var ballTrajectory = mutableListOf<Pair<Float, Float>>()
-    private val swingHistoryList = mutableListOf<SwingRecord>()
-    private var swingCount = 0
     private var lastSwingTimeMs: Long = 0L
 
     // 揮棒峰值定格鎖定 (Post-Swing Peak Latching)
@@ -115,26 +121,47 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        dbHelper = SwingDatabaseHelper(this)
+
+        // 載入當前打者 Profile
+        @Suppress("DEPRECATION")
+        currentBatter = intent.getSerializableExtra(LoginActivity.EXTRA_PLAYER_PROFILE) as? PlayerProfile
+            ?: PlayerProfile.createGuestProfile()
+
+        playerHeightCm = currentBatter.heightCm
+        isRightHanded = currentBatter.isRightHanded
+
         previewView = findViewById(R.id.previewView)
         overlayView = findViewById(R.id.overlayView)
         btnTabCamera = findViewById(R.id.btnTabCamera)
         btnTabHistory = findViewById(R.id.btnTabHistory)
         btnBackToCamera = findViewById(R.id.btnBackToCamera)
+        btnPlayerProfile = findViewById(R.id.btnPlayerProfile)
         btnHeight = findViewById(R.id.btnHeight)
         btnBatterSide = findViewById(R.id.btnBatterSide)
         btnDistance = findViewById(R.id.btnDistance)
         btnSettings = findViewById(R.id.btnSettings)
-        tvSpeed = findViewById(R.id.tvSpeed)
-        tvAngle = findViewById(R.id.tvAngle)
-        tvAngularVelocity = findViewById(R.id.tvAngularVelocity)
-        tvDistance = findViewById(R.id.tvDistance)
+        btnExportCsv = findViewById(R.id.btnExportCsv)
+        tvPeakSpeed = findViewById(R.id.tvPeakSpeed)
+        tvPeakAngle = findViewById(R.id.tvPeakAngle)
+        tvPeakAngularVelocity = findViewById(R.id.tvPeakAngularVelocity)
+        tvPeakDistance = findViewById(R.id.tvPeakDistance)
+        tvLiveSpeed = findViewById(R.id.tvLiveSpeed)
+        tvLiveAngle = findViewById(R.id.tvLiveAngle)
+        tvLiveAngularVelocity = findViewById(R.id.tvLiveAngularVelocity)
+        tvLiveDistance = findViewById(R.id.tvLiveDistance)
         tvMaxSpeed = findViewById(R.id.tvMaxSpeed)
         tvAvgSpeed = findViewById(R.id.tvAvgSpeed)
         tvTotalSwings = findViewById(R.id.tvTotalSwings)
         tvFps = findViewById(R.id.tvFps)
         cameraContainer = findViewById(R.id.cameraContainer)
         historyContainer = findViewById(R.id.historyContainer)
+        rvHistory = findViewById(R.id.rvHistory)
 
+        // 設定打者標籤 UI
+        updatePlayerProfileUI()
+
+        btnPlayerProfile.setOnClickListener { switchPlayerProfile() }
         btnHeight.setOnClickListener { showHeightInputDialog() }
         btnBatterSide.setOnClickListener { toggleBatterSide() }
         btnDistance.setOnClickListener { cycleCameraDistance() }
@@ -144,11 +171,35 @@ class MainActivity : AppCompatActivity() {
         btnTabHistory.setOnClickListener { switchToHistoryTab() }
         btnBackToCamera.setOnClickListener { switchToCameraTab() }
 
+        btnExportCsv.setOnClickListener { handleExportCsv() }
+        btnClearAllHistory.setOnClickListener { handleClearAllHistory() }
+
+        // 設定歷史數據 RecyclerView Adapter
+        historyAdapter = SwingHistoryAdapter(emptyList()) { recordToDelete ->
+            showDeleteSingleRecordDialog(recordToDelete)
+        }
+        rvHistory.layoutManager = LinearLayoutManager(this)
+        rvHistory.adapter = historyAdapter
+
+        reloadHistoryData()
+
         if (checkCameraPermission()) {
             startCameraAndAnalysis()
         } else {
             requestCameraPermission()
         }
+    }
+
+    private fun updatePlayerProfileUI() {
+        btnPlayerProfile.text = "👤 #${currentBatter.jerseyNumber} ${currentBatter.name}"
+        btnHeight.text = "📏 身高: ${currentBatter.heightCm.toInt()} cm"
+        btnBatterSide.text = if (isRightHanded) "⚾ 右打 (RHH)" else "⚾ 左打 (LHH)"
+    }
+
+    private fun switchPlayerProfile() {
+        val intent = Intent(this, LoginActivity::class.java)
+        startActivity(intent)
+        finish()
     }
 
     private fun checkCameraPermission(): Boolean {
@@ -171,81 +222,132 @@ class MainActivity : AppCompatActivity() {
         if (cameraList.isEmpty()) return
 
         val currentIndex = cameraList.indexOfFirst { it.cameraId == selectedCameraId }
-        val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % cameraList.size else 0
+        val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % cameraList.size
         val nextLens = cameraList[nextIndex]
 
         selectedCameraId = nextLens.cameraId
-        Toast.makeText(this, "📷 已切換至 鏡頭 #${nextLens.cameraId} (${nextLens.facingName})", Toast.LENGTH_SHORT).show()
+        Toast.makeText(
+            this,
+            "切換鏡頭 ➔ #${nextLens.cameraId} (${nextLens.facingName})",
+            Toast.LENGTH_SHORT
+        ).show()
+
         startCameraAndAnalysis()
     }
 
     private fun cycleCameraDistance() {
-        val presets = floatArrayOf(3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 6.0f)
-        val currentIndex = presets.indexOfFirst { abs(it - cameraDistanceMeters) < 0.1f }
-        val nextIndex = if (currentIndex >= 0) (currentIndex + 1) % presets.size else 2
-        cameraDistanceMeters = presets[nextIndex]
+        val presetDistances = listOf(3.0f, 3.5f, 4.0f, 4.5f, 5.0f, 6.0f)
+        val currentIndex = presetDistances.indexOfFirst { abs(it - cameraDistanceMeters) < 0.1f }
+        val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % presetDistances.size
+        cameraDistanceMeters = presetDistances[nextIndex]
+
         btnDistance.text = String.format("🎥 距離: %.1fm", cameraDistanceMeters)
-        Toast.makeText(this, "🎥 已切換拍攝距離為 ${cameraDistanceMeters} 米 (本壘板動態縮放對齊中)", Toast.LENGTH_SHORT).show()
-        startCameraAndAnalysis()
+        Toast.makeText(
+            this,
+            String.format("相機拍攝距離切換至 %.1f 米", cameraDistanceMeters),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
+
+    private fun toggleBatterSide() {
+        isRightHanded = !isRightHanded
+        updatePlayerProfileUI()
+        val sideText = if (isRightHanded) "右打 (RHH)" else "左打 (LHH)"
+        Toast.makeText(this, "切換打擊位置：$sideText", Toast.LENGTH_SHORT).show()
     }
 
     private fun switchToCameraTab() {
-        if (cameraContainer.visibility == View.VISIBLE) {
-            // 已在相機頁面時，點按 🎥 按鈕即可一鍵輪播切換下一個鏡頭
-            cycleCameraLens()
-            return
-        }
-
         cameraContainer.visibility = View.VISIBLE
         historyContainer.visibility = View.GONE
-
         btnTabCamera.setBackgroundColor(0xFF00E5FF.toInt())
         btnTabCamera.setTextColor(0xFF000000.toInt())
-
         btnTabHistory.setBackgroundColor(0x801E293B.toInt())
         btnTabHistory.setTextColor(0xFFFFFFFF.toInt())
-
-        if (checkCameraPermission()) {
+        if (cameraProvider == null) {
             startCameraAndAnalysis()
         }
     }
 
     private fun switchToHistoryTab() {
-        // 關鍵需求：切換至歷史數據頁時，立即關閉釋放相機鏡頭省電！
-        cameraProvider?.unbindAll()
-
         cameraContainer.visibility = View.GONE
         historyContainer.visibility = View.VISIBLE
-
         btnTabHistory.setBackgroundColor(0xFF00E5FF.toInt())
         btnTabHistory.setTextColor(0xFF000000.toInt())
-
         btnTabCamera.setBackgroundColor(0x801E293B.toInt())
         btnTabCamera.setTextColor(0xFFFFFFFF.toInt())
 
-        updateHistoryStats()
+        cameraProvider?.unbindAll()
+        reloadHistoryData()
     }
 
-    private fun toggleBatterSide() {
-        isRightHanded = !isRightHanded
-        if (isRightHanded) {
-            btnBatterSide.text = "⚾ 右打 (RHH)"
-            btnBatterSide.setTextColor(0xFFFFEA00.toInt())
+    private fun reloadHistoryData() {
+        val records = dbHelper.getAllSwingRecords()
+        historyAdapter.updateData(records)
+
+        if (records.isEmpty()) {
+            tvMaxSpeed.text = "0.0 km/h"
+            tvAvgSpeed.text = "0.0 km/h"
+            tvTotalSwings.text = "0 次"
         } else {
-            btnBatterSide.text = "⚾ 左打 (LHH)"
-            btnBatterSide.setTextColor(0xFF00E5FF.toInt())
+            val maxSpd = records.maxOf { it.speedKmh }
+            val avgSpd = records.map { it.speedKmh }.average().toFloat()
+            tvMaxSpeed.text = String.format("%.1f km/h", maxSpd)
+            tvAvgSpeed.text = String.format("%.1f km/h", avgSpd)
+            tvTotalSwings.text = "${records.size} 次"
         }
     }
 
-    @OptIn(ExperimentalCamera2Interop::class)
-    private fun startCameraAndAnalysis() {
-        val cameraList = getAvailableCameraList()
-        val selectedLens = cameraList.firstOrNull { it.cameraId == selectedCameraId } ?: cameraList.firstOrNull()
-        currentCameraFps = (selectedLens?.maxFps ?: 60).toFloat()
-        if (::tvFps.isInitialized) {
-            tvFps.text = "🟢 ${currentCameraFps.toInt()} FPS"
+    private fun showDeleteSingleRecordDialog(record: SwingRecordEntity) {
+        AlertDialog.Builder(this)
+            .setTitle("🗑️ 刪除單筆異常數據")
+            .setMessage("確定要手動剔除這筆離峰數據紀錄嗎？\n\n打者：#${record.jerseyNumber} ${record.playerName}\n初速：${record.speedKmh} km/h\n時間：${record.timestamp}")
+            .setPositiveButton("確定刪除") { _, _ ->
+                val success = dbHelper.deleteSwingRecord(record.id)
+                if (success) {
+                    Toast.makeText(this, "已刪除該筆離峰數據", Toast.LENGTH_SHORT).show()
+                    reloadHistoryData()
+                }
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun handleClearAllHistory() {
+        AlertDialog.Builder(this)
+            .setTitle("⚠️ 清空所有歷史紀錄")
+            .setMessage("確定要刪除所有揮棒數據紀錄嗎？此動作無法復原。")
+            .setPositiveButton("確定清空") { _, _ ->
+                dbHelper.deleteAllSwingRecords()
+                reloadHistoryData()
+                Toast.makeText(this, "歷史數據已全部清空", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("取消", null)
+            .show()
+    }
+
+    private fun handleExportCsv() {
+        val csvFile = dbHelper.exportToCsvFile(this)
+        if (csvFile == null || !csvFile.exists()) {
+            Toast.makeText(this, "目前尚無任何打擊數據可供匯出！", Toast.LENGTH_SHORT).show()
+            return
         }
 
+        try {
+            val uri = FileProvider.getUriForFile(this, "$packageName.fileprovider", csvFile)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "棒球 AI 擊球動態分析報表")
+                putExtra(Intent.EXTRA_TEXT, "隨附棒球打擊初速、仰角與角速度完整 CSV 數據報表。")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "分享 / 儲存打擊數據 CSV 報表"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "匯出 CSV 失敗: ${e.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun startCameraAndAnalysis() {
         poseLandmarkerHelper?.clear()
         poseLandmarkerHelper = PoseLandmarkerHelper(
             context = this,
@@ -322,7 +424,13 @@ class MainActivity : AppCompatActivity() {
                                     fps = currentCameraFps
                                 )
 
-                                // 揮棒後定格呈現與出球 CV 追蹤 (Post-Swing Peak Latching Mode)
+                                // 第二排：🔄 測試參考：即時動態連線數據 (每秒 60 幀持續即時刷新)
+                                tvLiveSpeed.text = String.format("🔄 即時: %.1f km/h", metrics.speedKmh)
+                                tvLiveAngle.text = String.format("🔄 即時: %.1f°", metrics.launchAngleDeg)
+                                tvLiveAngularVelocity.text = String.format("🔄 即時: %.0f deg/s", trunkAngularVel)
+                                tvLiveDistance.text = String.format("🔄 即時: %.1f m", metrics.estimatedDistanceMeters)
+
+                                // 第一排：⚡ 揮棒後定格呈現峰值 (Post-Swing Peak Latching Mode)
                                 if (!isInCooldown) {
                                     if (metrics.speedKmh >= triggerSpeedKmh && metrics.isCorrectDirection) {
                                         isSwingingStroke = true
@@ -333,25 +441,29 @@ class MainActivity : AppCompatActivity() {
                                             peakAngularVelocity = metrics.angularVelocityDegSec
                                         }
                                     } else if (isSwingingStroke) {
-                                        // 揮棒動作剛剛結束 -> 寫入歷史並啟動定格冷卻
+                                        // 揮棒動作剛剛結束 -> 寫入 SQLite DB 並啟動定格冷卻
                                         isSwingingStroke = false
                                         lastSwingTimeMs = now
-                                        swingCount++
-                                        swingHistoryList.add(
-                                            SwingRecord(
-                                                id = swingCount,
-                                                speedKmh = peakSpeedKmh,
-                                                launchAngleDeg = peakLaunchAngle,
-                                                distanceMeters = peakDistance,
-                                                angularVelocityDegSec = peakAngularVelocity,
-                                                timestamp = "揮棒 #${swingCount}"
-                                            )
+
+                                        val timeStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())
+                                        val recordEntity = SwingRecordEntity(
+                                            jerseyNumber = currentBatter.jerseyNumber,
+                                            playerName = currentBatter.name,
+                                            heightCm = playerHeightCm,
+                                            stance = if (isRightHanded) "右打 (RHH)" else "左打 (LHH)",
+                                            speedKmh = peakSpeedKmh,
+                                            launchAngleDeg = peakLaunchAngle,
+                                            distanceMeters = peakDistance,
+                                            angularVelocityDegSec = peakAngularVelocity,
+                                            timestamp = timeStr
                                         )
 
-                                        tvSpeed.text = String.format("%.1f km/h", peakSpeedKmh)
-                                        tvAngle.text = String.format("%.1f°", peakLaunchAngle)
-                                        tvAngularVelocity.text = String.format("%.0f deg/s", peakAngularVelocity)
-                                        tvDistance.text = String.format("%.1f m", peakDistance)
+                                        dbHelper.insertSwingRecord(recordEntity)
+
+                                        tvPeakSpeed.text = String.format("%.1f km/h", peakSpeedKmh)
+                                        tvPeakAngle.text = String.format("%.1f°", peakLaunchAngle)
+                                        tvPeakAngularVelocity.text = String.format("%.0f deg/s", peakAngularVelocity)
+                                        tvPeakDistance.text = String.format("%.1f m", peakDistance)
 
                                         peakSpeedKmh = 0f
                                         peakLaunchAngle = 0f
@@ -393,9 +505,8 @@ class MainActivity : AppCompatActivity() {
             imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
                 try {
                     val bitmap = imageProxy.toBitmap()
-                    val matrix = Matrix().apply {
-                        postRotate(imageProxy.imageInfo.rotationDegrees.toFloat())
-                    }
+                    val rotationDegrees = imageProxy.imageInfo.rotationDegrees
+                    val matrix = Matrix().apply { postRotate(rotationDegrees.toFloat()) }
                     val rotatedBitmap = Bitmap.createBitmap(
                         bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true
                     )
@@ -516,20 +627,6 @@ class MainActivity : AppCompatActivity() {
         return sb.toString().trimEnd()
     }
 
-    private fun updateHistoryStats() {
-        if (swingHistoryList.isEmpty()) {
-            tvMaxSpeed.text = "0.0 km/h"
-            tvAvgSpeed.text = "0.0 km/h"
-            tvTotalSwings.text = "0 次"
-        } else {
-            val maxSpd = swingHistoryList.maxOf { it.speedKmh }
-            val avgSpd = swingHistoryList.map { it.speedKmh }.average().toFloat()
-            tvMaxSpeed.text = String.format("%.1f km/h", maxSpd)
-            tvAvgSpeed.text = String.format("%.1f km/h", avgSpd)
-            tvTotalSwings.text = "${swingHistoryList.size} 次"
-        }
-    }
-
     private fun showHeightInputDialog() {
         val input = EditText(this).apply {
             setText(playerHeightCm.toInt().toString())
@@ -541,9 +638,10 @@ class MainActivity : AppCompatActivity() {
             .setMessage("請輸入打者真實身高 (cm)：")
             .setView(input)
             .setPositiveButton("確定") { _, _ ->
-                val parsed = input.text.toString().toFloatOrNull() ?: 175f
+                val parsed = input.text.toString().toFloatOrNull() ?: 170f
                 playerHeightCm = parsed
-                btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
+                currentBatter = currentBatter.copy(heightCm = playerHeightCm)
+                updatePlayerProfileUI()
             }
             .setNegativeButton("取消", null)
             .show()
@@ -706,13 +804,14 @@ class MainActivity : AppCompatActivity() {
                 minDetectionConfidence = (etMinDetect.text.toString().toFloatOrNull() ?: 0.65f).coerceIn(0.10f, 0.99f)
                 minTrackingConfidence = (etMinTrack.text.toString().toFloatOrNull() ?: 0.50f).coerceIn(0.10f, 0.99f)
                 cameraDistanceMeters = (etCameraDistance.text.toString().toFloatOrNull() ?: 4.0f).coerceIn(3.0f, 6.0f)
-                playerHeightCm = etHeight.text.toString().toFloatOrNull() ?: 175f
+                playerHeightCm = etHeight.text.toString().toFloatOrNull() ?: 170f
                 homePlateWidthCm = etPlateWidth.text.toString().toFloatOrNull() ?: 43.2f
                 speedMultiplier = etMultiplier.text.toString().toFloatOrNull() ?: 1.00f
                 flightCaptureFrames = (etFlightFrames.text.toString().toIntOrNull() ?: 5).coerceIn(3, 10)
                 isBaseballMode = rbBaseball.isChecked
 
-                btnHeight.text = "📏 身高: ${playerHeightCm.toInt()} cm"
+                currentBatter = currentBatter.copy(heightCm = playerHeightCm)
+                updatePlayerProfileUI()
                 btnDistance.text = String.format("🎥 距離: %.1fm", cameraDistanceMeters)
                 Toast.makeText(this, "設定已更新並載入 鏡頭 #${selectedCameraId}", Toast.LENGTH_SHORT).show()
 

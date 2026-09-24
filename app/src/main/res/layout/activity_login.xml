@@ -1,0 +1,199 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0F172A"
+    android:fillViewport="true">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_horizontal"
+        android:orientation="vertical"
+        android:padding="24dp">
+
+        <!-- Logo / 標題標示 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:text="⚾"
+            android:textSize="56sp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="棒球/壘球 AI 動態分析系統"
+            android:textColor="#00E5FF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="請輸入打者資訊以開啟運動學與初速分析"
+            android:textColor="#94A3B8"
+            android:textSize="13sp" />
+
+        <!-- 登入卡片容器 (Glassmorphism dark card) -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:background="#1E293B"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- 背號輸入 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="1. 🔢 打者背號 (Jersey #)"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/etJerseyNumber"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#0F172A"
+                android:hint="例如: 18"
+                android:inputType="number"
+                android:padding="12dp"
+                android:textColor="#00E5FF"
+                android:textColorHint="#475569"
+                android:textSize="15sp" />
+
+            <!-- 姓名輸入 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="2. 👤 打者姓名 (Name)"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/etPlayerName"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#0F172A"
+                android:hint="例如: 王大明"
+                android:inputType="textPersonName"
+                android:padding="12dp"
+                android:textColor="#00E5FF"
+                android:textColorHint="#475569"
+                android:textSize="15sp" />
+
+            <!-- 身高標定 -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="3. 📏 打者身高標定 (Height cm)"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <EditText
+                android:id="@+id/etPlayerHeight"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:background="#0F172A"
+                android:hint="預設: 175"
+                android:inputType="numberDecimal"
+                android:padding="12dp"
+                android:text="175"
+                android:textColor="#00E5FF"
+                android:textColorHint="#475569"
+                android:textSize="15sp" />
+
+            <!-- 打擊習慣選擇 (右打 / 左打) -->
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:text="4. ⚾ 打擊習慣 (Batting Stance)"
+                android:textColor="#FFFFFF"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <RadioGroup
+                android:id="@+id/rgBattingStance"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:orientation="horizontal">
+
+                <RadioButton
+                    android:id="@+id/rbRightHanded"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:checked="true"
+                    android:text="右打 (RHH)"
+                    android:textColor="#FFEA00"
+                    android:textSize="14sp" />
+
+                <RadioButton
+                    android:id="@+id/rbLeftHanded"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="左打 (LHH)"
+                    android:textColor="#FFEA00"
+                    android:textSize="14sp" />
+            </RadioGroup>
+
+            <!-- 登入按鈕 -->
+            <Button
+                android:id="@+id/btnLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                android:backgroundTint="#00E5FF"
+                android:paddingVertical="12dp"
+                android:text="🚀 開始打擊分析"
+                android:textColor="#000000"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <!-- 訪客快速登入按鈕 -->
+            <Button
+                android:id="@+id/btnGuestLogin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:backgroundTint="#334155"
+                android:paddingVertical="10dp"
+                android:text="👤 訪客快速進入 (預設 170cm / 右打)"
+                android:textColor="#00E676"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- 近期已儲存打者名單 -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="📋 近期已有打者紀錄 (點選快速登入)"
+            android:textColor="#94A3B8"
+            android:textSize="13sp" />
+
+        <LinearLayout
+            android:id="@+id/containerSavedPlayers"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="vertical" />
+
+    </LinearLayout>
+</ScrollView>
